@@ -10,6 +10,7 @@ mixed with all other Future types within the Tokio reactor.
 [depdendencies]
 mio-aio = "0.1"
 mio = "0.7"
+nix = "0.8"
 tokio-core = "0.2"
 ```
 
