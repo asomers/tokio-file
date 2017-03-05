@@ -1,4 +1,4 @@
-# mio-aio
+# tokio-aio
 
 A library for integrating file I/O with [tokio].  File I/O can be seamlessly
 mixed with all other Future types within the Tokio reactor.
@@ -27,7 +27,7 @@ different backend.  Instead of using POSIX AIO as `mio-aio` does, Linux will
 need a `mio-libaio` crate, that uses Linux's nonstandard libaio with a signalfd
 for notifications.  That's the approach taken by [seastar].
 
-[seastar]: http://www.seastar-project.org/`
+[seastar]: http://www.seastar-project.org/
 
 # License
 
