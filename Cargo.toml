@@ -2,6 +2,7 @@
 name = "tokio-file"
 version = "0.1.0"
 authors = ["Alan Somers <asomers@gmail.com>"]
+license = "MIT/Apache-2.0"
 readme = "README.md"
 respository = "https://github.com/asomers/tokio-file"
 homepage = "https://github.com/asomers/tokio-file"
