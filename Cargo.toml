@@ -1,0 +1,22 @@
+[package]
+name = "tokio-file"
+version = "0.1.0"
+authors = ["Alan Somers <asomers@gmail.com>"]
+readme = "README.md"
+respository = "https://github.com/asomers/tokio-file"
+homepage = "https://github.com/asomers/tokio-file"
+description = """
+Asynchronous file I/O for Tokio
+"""
+categories = ["asynchronous", "filesystems"]
+
+[dependencies]
+futures = "0.1.10"
+libc = "0.2"
+mio = { path = "/home/somers/src/rust/mio" }
+mio-aio = { path = "/home/somers/src/rust/mio-aio" }
+nix = { path = "/home/somers/src/rust/nix" }
+tokio-core = { path = "/home/somers/src/rust/tokio-core" }
+
+[dev-dependencies]
+tempfile = "2"
