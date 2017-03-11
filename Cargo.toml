@@ -20,4 +20,4 @@ nix = { path = "/home/somers/src/rust/nix" }
 tokio-core = { path = "/home/somers/src/rust/tokio-core" }
 
 [dev-dependencies]
-tempfile = "2"
+tempdir = "0.3"

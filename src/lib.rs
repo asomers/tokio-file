@@ -6,6 +6,6 @@ extern crate mio_aio;
 extern crate nix;
 extern crate tokio_core;
 
-mod file;
+pub mod file;
 
 pub use file::File;

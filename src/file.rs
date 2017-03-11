@@ -12,6 +12,7 @@ use tokio_core::reactor::{Handle, PollEvented};
 use std::fs;
 use std::io;
 use std::marker::PhantomData;
+use std::path::Path;
 use std::os::unix::io::AsRawFd;
 
 enum AioOpcode {
@@ -55,24 +56,29 @@ impl<'a> AioFut<'a, isize> {
 }
 
 /// Basically a Tokio file handle
-pub struct File<'a> {
-    file: &'a mut fs::File,
-    handle: &'a Handle
+pub struct File {
+    file: fs::File,
+    handle: Handle
 }
 
-impl<'a> File<'a> {
+impl File {
     /// Open a new Tokio file
     // Technically, sfd::fs::File::open can block, so we should make a
     // nonblocking File::open method and have it return a Future.  That's what
     // Seastar does.  But POSIX AIO doesn't have any kind of asynchronous open
-    // function, so there's no way to implement such a method.  Instead, we'll
-    // require the user to open the file using traditional blocking APIs.
-    pub fn new(f: &'a mut fs::File, h: &'a Handle) -> File<'a> {
-        File {file: f, handle: h}
+    // function, so there's no straightforward way to implement such a method.
+    // Instead, we'll block.
+    pub fn open<P: AsRef<Path>>(path: P, h: Handle) -> io::Result<File> {
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)
+            .map(|f| File {file: f, handle: h})
     }
 
     /// Asynchronous equivalent of std::fs::File::read_at
-    pub fn read_at<'b>(&'a self, buf: &'b mut [u8], offset: off_t) -> io::Result<AioFut<'b, isize>> {
+    pub fn read_at<'b>(&self, buf: &'b mut [u8], offset: off_t) -> io::Result<AioFut<'b, isize>> {
         let aiocb = mio_aio::AioCb::from_mut_slice(self.file.as_raw_fd(),
                             offset,  //offset
                             buf,
@@ -85,7 +91,7 @@ impl<'a> File<'a> {
     }
 
     /// Asynchronous equivalent of std::fs::File::write_at
-    pub fn write_at<'b>(&'a self, buf: &'b [u8], offset: off_t) -> io::Result<AioFut<'b, isize>> {
+    pub fn write_at<'b>(&self, buf: &'b [u8], offset: off_t) -> io::Result<AioFut<'b, isize>> {
         let aiocb = mio_aio::AioCb::from_slice(self.file.as_raw_fd(),
                             offset,  //offset
                             buf,
