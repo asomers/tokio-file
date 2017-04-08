@@ -11,9 +11,9 @@ use nix;
 use tokio_core::reactor::{Handle, PollEvented};
 use std::fs;
 use std::io;
-use std::marker::PhantomData;
-use std::path::Path;
 use std::os::unix::io::AsRawFd;
+use std::path::Path;
+use std::rc::Rc;
 
 enum AioOpcode {
     Fsync,
@@ -36,20 +36,37 @@ enum AioState {
 /// A Future representing an AIO operation.  `T` is the type that would be
 /// returned by the underlying operation if it were synchronous.
 #[must_use = "futures do nothing unless polled"]
-pub struct AioFut<'a, T> {
+pub struct AioReadFut<'a> {
     io: PollEvented<mio_aio::AioCb<'a>>,
     op: AioOpcode,
     state: AioState,
-    phantom: PhantomData<T>
 }
 
-impl<'a> AioFut<'a, ()> {
+pub struct AioWriteFut<'a> {
+    io: PollEvented<mio_aio::AioCb<'a>>,
+    op: AioOpcode,
+    state: AioState,
+}
+
+pub struct AioSyncFut<'a> {
+    io: PollEvented<mio_aio::AioCb<'a>>,
+    op: AioOpcode,
+    state: AioState,
+}
+
+impl<'a> AioReadFut<'a> {
+    fn aio_return(&self) -> Result<isize, nix::Error> {
+        self.io.get_ref().aio_return().map(|x| x)
+    }
+}
+
+impl<'a> AioSyncFut<'a> {
     fn aio_return(&self) -> Result<(), nix::Error> {
         self.io.get_ref().aio_return().map(|_| ())
     }
 }
 
-impl<'a> AioFut<'a, isize> {
+impl<'a> AioWriteFut<'a> {
     fn aio_return(&self) -> Result<isize, nix::Error> {
         self.io.get_ref().aio_return().map(|x| x)
     }
@@ -78,45 +95,43 @@ impl File {
     }
 
     /// Asynchronous equivalent of std::fs::File::read_at
-    pub fn read_at<'b>(&self, buf: &'b mut [u8], offset: off_t) -> io::Result<AioFut<'b, isize>> {
-        let aiocb = mio_aio::AioCb::from_mut_slice(self.file.as_raw_fd(),
+    pub fn read_at<'a>(&'a self, buf: Rc<Box<[u8]>>, offset: off_t) -> io::Result<AioReadFut<'a>> {
+        let aiocb = mio_aio::AioCb::from_boxed_slice(self.file.as_raw_fd(),
                             offset,  //offset
                             buf,
                             0,  //priority
                             aio::LioOpcode::LIO_NOP);
-        Ok(AioFut{ io: try!(PollEvented::new(aiocb, &self.handle)),
+        Ok(AioReadFut::<'a>{ io: try!(PollEvented::new(aiocb, &self.handle)),
                    op: AioOpcode::Read,
-                   state: AioState::Allocated,
-                   phantom: PhantomData})
+                   state: AioState::Allocated})
     }
 
     /// Asynchronous equivalent of std::fs::File::write_at
-    pub fn write_at<'b>(&self, buf: &'b [u8], offset: off_t) -> io::Result<AioFut<'b, isize>> {
-        let aiocb = mio_aio::AioCb::from_slice(self.file.as_raw_fd(),
+    // TODO: write a method to write a static buffer
+    pub fn write_at(&self, buf: Rc<Box<[u8]>>, offset: off_t) -> io::Result<AioWriteFut> {
+        let aiocb = mio_aio::AioCb::from_boxed_slice(self.file.as_raw_fd(),
                             offset,  //offset
                             buf,
                             0,  //priority
                             aio::LioOpcode::LIO_NOP);
-        Ok(AioFut{ io: try!(PollEvented::new(aiocb, &self.handle)),
+        Ok(AioWriteFut{ io: try!(PollEvented::new(aiocb, &self.handle)),
                    op: AioOpcode::Write,
-                   state: AioState::Allocated,
-                   phantom: PhantomData})
+                   state: AioState::Allocated})
     }
 
     /// Asynchronous equivalent of std::fs::File::sync_all
     // TODO: add sync_all_data, for supported operating systems
-    pub fn sync_all(&self) -> io::Result<AioFut<()>> {
+    pub fn sync_all(&self) -> io::Result<AioSyncFut> {
         let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
                             0,  //priority
                             );
-        Ok(AioFut{ io: try!(PollEvented::new(aiocb, &self.handle)),
+        Ok(AioSyncFut{ io: try!(PollEvented::new(aiocb, &self.handle)),
                    op: AioOpcode::Fsync,
-                   state: AioState::Allocated,
-                   phantom: PhantomData})
+                   state: AioState::Allocated})
     }
 }
 
-impl<'a> Future for AioFut<'a, ()> {
+impl<'a> Future for AioSyncFut<'a> {
     type Item = ();
     type Error = nix::Error;
 
@@ -139,7 +154,30 @@ impl<'a> Future for AioFut<'a, ()> {
     }
 }
 
-impl<'a> Future for AioFut<'a, isize> {
+impl<'a> Future for AioReadFut<'a> {
+    type Item = isize;
+    type Error = nix::Error;
+
+    fn poll(&mut self) -> Poll<isize, nix::Error> {
+        if let AioState::Allocated = self.state {
+                let _ = match self.op {
+                    AioOpcode::Fsync => self.io.get_ref().fsync(aio::AioFsyncMode::O_SYNC),
+                    AioOpcode::Read => self.io.get_ref().read(),
+                    AioOpcode::Write => self.io.get_ref().write()
+                };  // TODO: handle failure at this point
+                self.state = AioState::InProgress;
+        }
+        if self.io.poll_aio() == Async::NotReady {
+            return Ok(Async::NotReady);
+        }
+        match self.aio_return() {
+            Ok(x) => Ok(Async::Ready(x)),
+            Err(x) => Err(x)
+        }
+    }
+}
+
+impl<'a> Future for AioWriteFut<'a> {
     type Item = isize;
     type Error = nix::Error;
 
