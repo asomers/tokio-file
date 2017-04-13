@@ -15,6 +15,7 @@ use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::rc::Rc;
 
+#[derive(Debug)]
 enum AioOpcode {
     Fsync,
     Read,
@@ -22,6 +23,7 @@ enum AioOpcode {
 }
 
 /// Represents the progress of a single AIO operation
+#[derive(Debug)]
 enum AioState {
     /// The AioFut has been allocated, but not submitted to the system
     Allocated,
@@ -36,37 +38,42 @@ enum AioState {
 /// A Future representing an AIO operation.  `T` is the type that would be
 /// returned by the underlying operation if it were synchronous.
 #[must_use = "futures do nothing unless polled"]
-pub struct AioReadFut<'a> {
-    io: PollEvented<mio_aio::AioCb<'a>>,
+#[derive(Debug)]
+pub struct AioReadFut {
+    io: PollEvented<mio_aio::AioCb>,
     op: AioOpcode,
     state: AioState,
 }
 
-pub struct AioWriteFut<'a> {
-    io: PollEvented<mio_aio::AioCb<'a>>,
+#[must_use = "futures do nothing unless polled"]
+#[derive(Debug)]
+pub struct AioWriteFut {
+    io: PollEvented<mio_aio::AioCb>,
     op: AioOpcode,
     state: AioState,
 }
 
-pub struct AioSyncFut<'a> {
-    io: PollEvented<mio_aio::AioCb<'a>>,
+#[must_use = "futures do nothing unless polled"]
+#[derive(Debug)]
+pub struct AioSyncFut {
+    io: PollEvented<mio_aio::AioCb>,
     op: AioOpcode,
     state: AioState,
 }
 
-impl<'a> AioReadFut<'a> {
+impl AioReadFut {
     fn aio_return(&self) -> Result<isize, nix::Error> {
         self.io.get_ref().aio_return().map(|x| x)
     }
 }
 
-impl<'a> AioSyncFut<'a> {
+impl AioSyncFut {
     fn aio_return(&self) -> Result<(), nix::Error> {
         self.io.get_ref().aio_return().map(|_| ())
     }
 }
 
-impl<'a> AioWriteFut<'a> {
+impl AioWriteFut {
     fn aio_return(&self) -> Result<isize, nix::Error> {
         self.io.get_ref().aio_return().map(|x| x)
     }
@@ -95,13 +102,13 @@ impl File {
     }
 
     /// Asynchronous equivalent of std::fs::File::read_at
-    pub fn read_at<'a>(&'a self, buf: Rc<Box<[u8]>>, offset: off_t) -> io::Result<AioReadFut<'a>> {
+    pub fn read_at(&self, buf: Rc<Box<[u8]>>, offset: off_t) -> io::Result<AioReadFut> {
         let aiocb = mio_aio::AioCb::from_boxed_slice(self.file.as_raw_fd(),
                             offset,  //offset
                             buf,
                             0,  //priority
                             aio::LioOpcode::LIO_NOP);
-        Ok(AioReadFut::<'a>{ io: try!(PollEvented::new(aiocb, &self.handle)),
+        Ok(AioReadFut{ io: try!(PollEvented::new(aiocb, &self.handle)),
                    op: AioOpcode::Read,
                    state: AioState::Allocated})
     }
@@ -131,7 +138,7 @@ impl File {
     }
 }
 
-impl<'a> Future for AioSyncFut<'a> {
+impl Future for AioSyncFut {
     type Item = ();
     type Error = nix::Error;
 
@@ -154,7 +161,7 @@ impl<'a> Future for AioSyncFut<'a> {
     }
 }
 
-impl<'a> Future for AioReadFut<'a> {
+impl Future for AioReadFut {
     type Item = isize;
     type Error = nix::Error;
 
@@ -177,7 +184,7 @@ impl<'a> Future for AioReadFut<'a> {
     }
 }
 
-impl<'a> Future for AioWriteFut<'a> {
+impl Future for AioWriteFut {
     type Item = isize;
     type Error = nix::Error;
 
