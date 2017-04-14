@@ -12,6 +12,7 @@ use tokio_core::reactor::{Handle, PollEvented};
 use std::fs;
 use std::io;
 use std::os::unix::io::AsRawFd;
+use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -40,7 +41,7 @@ enum AioState {
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
 pub struct AioReadFut {
-    io: PollEvented<mio_aio::AioCb>,
+    io: PollEvented<mio_aio::AioCb<'static>>,
     op: AioOpcode,
     state: AioState,
 }
@@ -48,7 +49,7 @@ pub struct AioReadFut {
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
 pub struct AioWriteFut {
-    io: PollEvented<mio_aio::AioCb>,
+    io: PollEvented<mio_aio::AioCb<'static>>,
     op: AioOpcode,
     state: AioState,
 }
@@ -56,7 +57,7 @@ pub struct AioWriteFut {
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
 pub struct AioSyncFut {
-    io: PollEvented<mio_aio::AioCb>,
+    io: PollEvented<mio_aio::AioCb<'static>>,
     op: AioOpcode,
     state: AioState,
 }
@@ -83,6 +84,31 @@ impl AioWriteFut {
 pub struct File {
     file: fs::File,
     handle: Handle
+}
+
+/// Base trait of objects that can be passed to File::write_at
+pub trait WriteAtable {
+    fn to_aiocb(&self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static>;
+}
+
+impl WriteAtable for Rc<Box<[u8]>> {
+    fn to_aiocb(&self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static> {
+        mio_aio::AioCb::from_boxed_slice(fd,
+            offs,
+            self.clone(),
+            0,  //priority
+            aio::LioOpcode::LIO_NOP)
+    }
+}
+
+impl WriteAtable for &'static [u8] {
+    fn to_aiocb(&self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static> {
+        mio_aio::AioCb::from_slice(fd,
+            offs,
+            self,
+            0,  //priority
+            aio::LioOpcode::LIO_NOP)
+    }
 }
 
 impl File {
@@ -114,13 +140,8 @@ impl File {
     }
 
     /// Asynchronous equivalent of std::fs::File::write_at
-    // TODO: write a method to write a static buffer
-    pub fn write_at(&self, buf: Rc<Box<[u8]>>, offset: off_t) -> io::Result<AioWriteFut> {
-        let aiocb = mio_aio::AioCb::from_boxed_slice(self.file.as_raw_fd(),
-                            offset,  //offset
-                            buf,
-                            0,  //priority
-                            aio::LioOpcode::LIO_NOP);
+    pub fn write_at<T: WriteAtable>(&self, buf: T, offset: off_t) -> io::Result<AioWriteFut> {
+        let aiocb = buf.to_aiocb(self.file.as_raw_fd(), offset);
         Ok(AioWriteFut{ io: try!(PollEvented::new(aiocb, &self.handle)),
                    op: AioOpcode::Write,
                    state: AioState::Allocated})
