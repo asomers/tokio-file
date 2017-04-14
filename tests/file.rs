@@ -79,7 +79,6 @@ fn write_at() {
 #[test]
 fn write_at_static() {
     const WBUF: &'static [u8] = b"abcdef";
-    //let wbuf = Rc::new(String::from("abcdef").into_bytes().into_boxed_slice());
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new("tokio-file"));
