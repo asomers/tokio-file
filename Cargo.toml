@@ -14,9 +14,9 @@ categories = ["asynchronous", "filesystems"]
 [dependencies]
 futures = "0.1.10"
 libc = "0.2"
-mio = { path = "/home/somers/src/rust/mio" }
-mio-aio = { path = "/home/somers/src/rust/mio-aio" }
-nix = { path = "/home/somers/src/rust/nix" }
+mio = { git = "https://github.com/asomers/mio", branch = "aio6" }
+nix = { git = "https://github.com/nix-rust/nix", rev = "2f780ef" }
+mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "edda859" }
 tokio-core = { path = "/home/somers/src/rust/tokio-core" }
 
 [dev-dependencies]
