@@ -20,5 +20,6 @@ mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "edda859" }
 tokio-core = { path = "/home/somers/src/rust/tokio-core" }
 
 [dev-dependencies]
+futures = "0.1"
 getopts = "0.2"
 tempdir = "0.3"
