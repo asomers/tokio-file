@@ -8,4 +8,4 @@ extern crate tokio_core;
 
 pub mod file;
 
-pub use file::File;
+pub use file::{AioReadFut, AioSyncFut, AioWriteFut, File, WriteAtable};
