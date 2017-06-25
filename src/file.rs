@@ -5,6 +5,7 @@
 
 use libc::{off_t};
 use futures::{Async, Future, Poll};
+use mio::unix::UnixReady;
 use mio_aio;
 use nix::sys::aio;
 use nix;
@@ -172,7 +173,7 @@ impl Future for AioSyncFut {
                 };  // TODO: handle failure at this point
                 self.state = AioState::InProgress;
         }
-        if self.io.poll_aio() == Async::NotReady {
+        if self.io.poll_ready(UnixReady::aio().into()) == Async::NotReady {
             return Ok(Async::NotReady);
         }
         match self.aio_return() {
@@ -195,7 +196,7 @@ impl Future for AioReadFut {
                 };  // TODO: handle failure at this point
                 self.state = AioState::InProgress;
         }
-        if self.io.poll_aio() == Async::NotReady {
+        if self.io.poll_ready(UnixReady::aio().into()) == Async::NotReady {
             return Ok(Async::NotReady);
         }
         match self.aio_return() {
@@ -218,7 +219,7 @@ impl Future for AioWriteFut {
                 };  // TODO: handle failure at this point
                 self.state = AioState::InProgress;
         }
-        if self.io.poll_aio() == Async::NotReady {
+        if self.io.poll_ready(UnixReady::aio().into()) == Async::NotReady {
             return Ok(Async::NotReady);
         }
         match self.aio_return() {
