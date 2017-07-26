@@ -1,10 +1,11 @@
 [package]
 name = "tokio-file"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Alan Somers <asomers@gmail.com>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
-respository = "https://github.com/asomers/tokio-file"
+repository = "https://github.com/asomers/tokio-file"
+documentation = "https://docs.rs/tokio-file/0.1.1"
 description = """
 Asynchronous file I/O for Tokio
 """
