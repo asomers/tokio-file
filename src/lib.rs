@@ -7,6 +7,6 @@ extern crate mio_aio;
 extern crate nix;
 extern crate tokio_core;
 
-pub mod file;
+mod file;
 
 pub use file::{AioReadFut, AioSyncFut, AioWriteFut, File, WriteAtable};

@@ -22,7 +22,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::str::FromStr;
 use tokio_core::reactor::Core;
-use tokio_file::file::File;
+use tokio_file::File;
 use tokio_core::reactor::Handle;
 
 struct Dd {
