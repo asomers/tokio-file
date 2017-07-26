@@ -18,7 +18,7 @@ use std::vec;
 use tempdir::TempDir;
 use test::Bencher;
 use tokio_core::reactor::Core;
-use tokio_file::file::File;
+use tokio_file::File;
 
 const FLEN: usize = 4096;
 
