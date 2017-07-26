@@ -5,19 +5,18 @@ authors = ["Alan Somers <asomers@gmail.com>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
 respository = "https://github.com/asomers/tokio-file"
-homepage = "https://github.com/asomers/tokio-file"
 description = """
 Asynchronous file I/O for Tokio
 """
-categories = ["asynchronous", "filesystems"]
+categories = ["asynchronous", "filesystem"]
 
 [dependencies]
 futures = "0.1.10"
 libc = "0.2"
 mio = "0.6.9"
-nix = { git = "https://github.com/nix-rust/nix", rev = "2f780ef" }
-mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "b841ea6" }
-tokio-core = { git = "https://github.com/tokio-rs/tokio-core", rev = "c65c331" }
+nix = "0.9"
+mio-aio = "0.1"
+tokio-core = "0.1.9"
 
 [dev-dependencies]
 futures = "0.1"

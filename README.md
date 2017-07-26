@@ -9,14 +9,16 @@ mixed with all other Future types within the Tokio reactor.
 # Cargo.toml
 [depdendencies]
 mio-aio = "0.1"
-mio = "0.7"
-nix = "0.8"
-tokio-core = "0.2"
+mio = "0.6.9"
+nix = "0.9"
+tokio-core = "0.1.9"
 ```
 
 # Usage
 
-TODO
+See the `examples` directory in the repository.  In general, any program that's
+already using `tokio-core` can add file I/O by using `tokio_file::File` and
+running the resulting futures in the tokio reactor.
 
 # Platforms
 
@@ -24,7 +26,7 @@ TODO
 probably also work on DragonflyBSD and OSX.  It does not work on Linux.  The
 `tokio-file` API can be supported on Linux, but it will need a completely
 different backend.  Instead of using POSIX AIO as `mio-aio` does, Linux will
-need a `mio-libaio` crate, that uses Linux's nonstandard libaio with a signalfd
+need a `mio-libaio` crate, that uses Linux's nonstandard libaio with an eventfd
 for notifications.  That's the approach taken by [seastar].
 
 [seastar]: http://www.seastar-project.org/
