@@ -22,7 +22,8 @@ use std::rc::Rc;
 enum AioOpcode {
     Fsync,
     Read,
-    Write
+    Write,
+    Lio
 }
 
 /// Represents the progress of a single AIO operation
@@ -145,6 +146,25 @@ impl File {
                    phantom: PhantomData})
     }
 
+    /// Asynchronous equivalent of readv(2)
+    pub fn readv_at(&self, bufs: &[Rc<Box<[u8]>>], offset: off_t) -> io::Result<AioFut<()>> {
+        let liocb = mio_aio::LioCb::with_capacity(bufs.size);
+        for buf in bufs {
+            // TODO: Don't access nix::sys::aio directly.  Use an LioCb::emplace
+            // method.
+            liocb.push(aio::AioCb::from_boxed_slice(self.file.as_raw_fd(),
+                                                    offset,
+                                                    buf.clone(),
+                                                    0,  //priority
+                                                    aio::LioOpcode::LIO_READ));
+        };
+        Ok(AioFut::<()>{
+            io: try!(PollEvented::new(liocb, &self.handle)),
+            op: AioOpcode::Lio,
+            state: AioState::Allocated,
+            phantom: PhantomData})
+    }
+
     /// Asynchronous equivalent of `std::fs::File::write_at`
     pub fn write_at<T: WriteAtable>(&self, buf: T, offset: off_t) -> io::Result<AioFut<isize>> {
         let aiocb = buf.to_aiocb(self.file.as_raw_fd(), offset);
@@ -176,7 +196,8 @@ impl<T: FutFromIsize> Future for AioFut<T> {
                 let _ = match self.op {
                     AioOpcode::Fsync => self.io.get_ref().fsync(aio::AioFsyncMode::O_SYNC),
                     AioOpcode::Read => self.io.get_ref().read(),
-                    AioOpcode::Write => self.io.get_ref().write()
+                    AioOpcode::Write => self.io.get_ref().write(),
+                    AioOpcode::Lio => self.io.get_ref().listio()
                 };  // TODO: handle failure at this point
                 self.state = AioState::InProgress;
         }
