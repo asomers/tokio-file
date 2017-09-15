@@ -148,14 +148,16 @@ impl File {
 
     /// Asynchronous equivalent of readv(2)
     pub fn readv_at(&self, bufs: &[Rc<Box<[u8]>>], offset: off_t) -> io::Result<AioFut<()>> {
-        let liocb = mio_aio::LioCb::with_capacity(bufs.size);
+        let liocb = mio_aio::LioCb::with_capacity(bufs.len());
         for buf in bufs {
             // TODO: Don't access nix::sys::aio directly.  Use an LioCb::emplace
             // method.
+            use nix::sys::signal::SigevNotify;
             liocb.push(aio::AioCb::from_boxed_slice(self.file.as_raw_fd(),
                                                     offset,
                                                     buf.clone(),
                                                     0,  //priority
+                                                    SigevNotify::SigevNone,
                                                     aio::LioOpcode::LIO_READ));
         };
         Ok(AioFut::<()>{
