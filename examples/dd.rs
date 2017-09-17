@@ -82,7 +82,7 @@ fn main() {
     // Note: this simple example will fail if infile isn't big enough.  A robust
     // program would use loop_fn instead of stream.for_each so it can exit
     // early.
-    let stream = stream::iter((0..dd.count).map(|r| Ok(r)));
+    let stream = stream::iter_ok(0..dd.count);
     let fut = stream.for_each(|block| {
         let buf = Rc::new(vec![0; bs].into_boxed_slice());
         let bufclone = buf.clone();
