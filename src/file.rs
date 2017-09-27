@@ -45,7 +45,6 @@ enum AioState {
 #[derive(Debug)]
 pub struct AioFut<T> {
     op: AioOp,
-    //op: AioOpcode,
     state: AioState,
     phantom: PhantomData<T>
 }
@@ -73,7 +72,7 @@ impl<T: FutFromIsize> AioFut<T> {
     // Used internally by `futures::Future::poll`.  Should not be called by the
     // user.
     #[doc(hidden)]
-    fn aio_return(&self) -> Result<T, nix::Error> {
+    fn aio_return(&mut self) -> Result<T, nix::Error> {
         match self.op {
             AioOp::Fsync(ref io) =>
                 io.get_ref().aio_return().map(|x| T::from_isize(x)),
@@ -81,9 +80,15 @@ impl<T: FutFromIsize> AioFut<T> {
                 io.get_ref().aio_return().map(|x| T::from_isize(x)),
             AioOp::Write(ref io) =>
                 io.get_ref().aio_return().map(|x| T::from_isize(x)),
-            AioOp::Lio(ref io) =>
-                panic!("TODO: figure out what to do here")
-        //self.io.get_ref().aio_return().map(|x| T::from_isize(x))
+            AioOp::Lio(ref mut io) => {
+                let r = io.get_mut()
+                .aio_return()
+                .iter_mut()
+                .fold(0, |acc, res| {
+                    acc + res.unwrap()
+                });
+                Ok(T::from_isize(r))
+            }
         }
     }
 }
@@ -211,7 +216,7 @@ impl File {
     ///             are valid.
     /// `Err(x)`:   An error occurred before issueing the operation.  The result
     ///             may be `drop`ped.
-    pub fn readv_at(&self, bufs: &[Rc<Box<[u8]>>], offset: off_t) -> io::Result<AioFut<()>> {
+    pub fn readv_at(&self, bufs: &[Rc<Box<[u8]>>], offset: off_t) -> io::Result<AioFut<isize>> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
         for buf in bufs {
@@ -219,7 +224,7 @@ impl File {
                                       0, mio_aio::LioOpcode::LIO_READ);
             offs += buf.len() as off_t;
         };
-        Ok(AioFut::<()>{
+        Ok(AioFut::<isize>{
             op: AioOp::Lio(try!(PollEvented::new(liocb, &self.handle))),
             state: AioState::Allocated,
             phantom: PhantomData})

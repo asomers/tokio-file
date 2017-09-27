@@ -54,6 +54,31 @@ fn read_at() {
 }
 
 #[test]
+fn readv_at() {
+    const WBUF: &'static [u8] = b"abcdefghijklmnopqrwtuvwxyz";
+    const EXPECT0: &'static [u8] = b"cdef";
+    const EXPECT1: &'static [u8] = b"ghijklmn";
+    let rbuf0 = Rc::new(vec![0; 4].into_boxed_slice());
+    let rbuf1 = Rc::new(vec![0; 8].into_boxed_slice());
+    let rbufs = [rbuf0.clone(), rbuf1.clone()];
+    let off = 2;
+
+    let dir = t!(TempDir::new("tokio-file"));
+    let path = dir.path().join("readv_at");
+    let mut f = t!(fs::File::create(&path));
+    f.write(WBUF).expect("write failed");
+    {
+        let mut l = t!(Core::new());
+        let file = t!(File::open(&path, l.handle()));
+        let fut = file.readv_at(&rbufs, off).ok().expect("read_at failed early");
+        assert_eq!(t!(l.run(fut)) as usize, EXPECT0.len() + EXPECT1.len());
+    }
+
+    assert_eq!(rbuf0.deref().deref(), EXPECT0);
+    assert_eq!(rbuf1.deref().deref(), EXPECT1);
+}
+
+#[test]
 fn sync_all() {
     const WBUF: &'static [u8] = b"abcdef";
 
