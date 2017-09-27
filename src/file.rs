@@ -125,33 +125,31 @@ impl WriteAtable for &'static [u8] {
 }
 
 /// Base trait of objects that can be passed to File::writev_at
+///
+/// Like WriteAtable, but for writev
 pub trait WritevAtable {
-    fn to_liocb(&self, fd: RawFd, offs: off_t) -> mio_aio::LioCb<'static>;
+    fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t);
+    fn length(&self) -> usize;
 }
 
-impl WritevAtable for [Rc<Box<[u8]>>] {
-    fn to_liocb(&self, fd: RawFd, offset: off_t) -> mio_aio::LioCb<'static> {
-        let mut liocb = mio_aio::LioCb::with_capacity(self.len());
-        let mut offs = offset;
-        for buf in self {
-            liocb.emplace_boxed_slice(fd, offs, buf.clone(), 0,
-                                     mio_aio::LioOpcode::LIO_WRITE);
-            offs += buf.len() as off_t;
-        }
-        liocb
+impl WritevAtable for Rc<Box<[u8]>> {
+    fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t) {
+        liocb.emplace_boxed_slice(fd, offs, self.clone(), 0,
+                                  mio_aio::LioOpcode::LIO_WRITE);
+    }
+
+    fn length(&self) -> usize {
+        self.len()
     }
 }
 
-impl WritevAtable for [&'static [u8]] {
-    fn to_liocb(&self, fd: RawFd, offset: off_t) -> mio_aio::LioCb<'static> {
-        let mut liocb = mio_aio::LioCb::with_capacity(self.len());
-        let mut offs = offset;
-        for buf in self {
-            liocb.emplace_slice(fd, offs, buf, 0,
-                                mio_aio::LioOpcode::LIO_WRITE);
-            offs += buf.len() as off_t;
-        }
-        liocb
+impl WritevAtable for &'static [u8] {
+    fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t) {
+        liocb.emplace_slice(fd, offs, self, 0, mio_aio::LioOpcode::LIO_WRITE);
+    }
+
+    fn length(&self) -> usize {
+        self.len()
     }
 }
 
@@ -235,6 +233,21 @@ impl File {
         let aiocb = buf.to_aiocb(self.file.as_raw_fd(), offset);
         Ok(AioFut::<isize>{
             op: AioOp::Write(try!(PollEvented::new(aiocb, &self.handle))),
+            state: AioState::Allocated,
+            phantom: PhantomData})
+    }
+
+    /// Asynchronous equivalent of `pwritev`
+    pub fn writev_at<T: WritevAtable>(&self, bufs: &[T], offset: off_t) -> io::Result<AioFut<isize>> {
+        let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
+        let mut offs = offset;
+        for buf in bufs {
+            buf.emplace(&mut liocb, self.file.as_raw_fd(), offs);
+            offs += buf.length() as off_t;
+        };
+
+        Ok(AioFut::<isize>{
+            op: AioOp::Lio(try!(PollEvented::new(liocb, &self.handle))),
             state: AioState::Allocated,
             phantom: PhantomData})
     }

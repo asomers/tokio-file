@@ -115,6 +115,30 @@ fn write_at() {
 }
 
 #[test]
+fn writev_at() {
+    const EXPECT: &'static [u8] = b"abcdefghij";
+    let wbuf0 = Rc::new(String::from("abcdef").into_bytes().into_boxed_slice());
+    let wbuf1 = Rc::new(String::from("ghij").into_bytes().into_boxed_slice());
+    let total_len = wbuf0.len() + wbuf1.len();
+    let wbufs = [wbuf0, wbuf1];
+    let mut rbuf = Vec::new();
+
+    let dir = t!(TempDir::new("tokio-file"));
+    let path = dir.path().join("writev_at");
+    {
+        let mut l = t!(Core::new());
+        let file = t!(File::open(&path, l.handle()));
+        let fut = file.writev_at(&wbufs[..], 0).ok().expect("write_at failed early");
+        assert_eq!(t!(l.run(fut)) as usize, total_len);
+    }
+
+    let mut f = t!(fs::File::open(&path));
+    let len = t!(f.read_to_end(&mut rbuf));
+    assert_eq!(len, EXPECT.len());
+    assert_eq!(rbuf, EXPECT);
+}
+
+#[test]
 fn write_at_static() {
     const WBUF: &'static [u8] = b"abcdef";
     let mut rbuf = Vec::new();
