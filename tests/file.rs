@@ -128,7 +128,7 @@ fn writev_at() {
     {
         let mut l = t!(Core::new());
         let file = t!(File::open(&path, l.handle()));
-        let fut = file.writev_at(&wbufs[..], 0).ok().expect("write_at failed early");
+        let fut = file.writev_at(&wbufs, 0).ok().expect("writev_at failed early");
         assert_eq!(t!(l.run(fut)) as usize, total_len);
     }
 
@@ -156,4 +156,28 @@ fn write_at_static() {
     let len = t!(f.read_to_end(&mut rbuf));
     assert_eq!(len, WBUF.len());
     assert_eq!(rbuf, WBUF);
+}
+
+#[test]
+fn writev_at_static() {
+    const EXPECT: &'static [u8] = b"abcdefghi";
+    const WBUF0: &'static [u8] = b"abcdef";
+    const WBUF1: &'static [u8] = b"ghi";
+    let total_len = WBUF0.len() + WBUF1.len();
+    let wbufs = [WBUF0, WBUF1];
+    let mut rbuf = Vec::new();
+
+    let dir = t!(TempDir::new("tokio-file"));
+    let path = dir.path().join("writev_at_static");
+    {
+        let mut l = t!(Core::new());
+        let file = t!(File::open(&path, l.handle()));
+        let fut = file.writev_at(&wbufs, 0).ok().expect("writev_at failed early");
+        assert_eq!(t!(l.run(fut)) as usize, total_len);
+    }
+
+    let mut f = t!(fs::File::open(&path));
+    let len = t!(f.read_to_end(&mut rbuf));
+    assert_eq!(len, EXPECT.len());
+    assert_eq!(rbuf, EXPECT);
 }
