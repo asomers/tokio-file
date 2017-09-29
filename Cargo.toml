@@ -13,10 +13,10 @@ categories = ["asynchronous", "filesystem"]
 [dependencies]
 futures = "0.1.10"
 libc = "0.2"
-mio = "0.6.9"
-nix = "0.9"
+mio = { path = "/home/somers/src/rust/mio" }
+nix = { path = "/home/somers/src/rust/nix" }
 mio-aio = { path = "/home/somers/src/rust/mio-aio" }
-tokio-core = "0.1.9"
+tokio-core = { path = "/home/somers/src/rust/tokio-core" }
 
 [dev-dependencies]
 futures = "0.1"
