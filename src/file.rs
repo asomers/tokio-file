@@ -109,6 +109,14 @@ impl WriteAtable for &'static [u8] {
 }
 
 impl File {
+    /// Get metadata from the underlying file
+    ///
+    /// POSIX AIO doesn't provide a way to do this asynchronously, so it must be
+    /// synchronous.
+    pub fn metadata(&self) -> io::Result<fs::Metadata> {
+        self.file.metadata()
+    }
+
     /// Open a new Tokio file
     // Technically, sfd::fs::File::open can block, so we should make a
     // nonblocking File::open method and have it return a Future.  That's what

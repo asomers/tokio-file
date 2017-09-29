@@ -20,6 +20,19 @@ macro_rules! t {
 }
 
 #[test]
+fn metadata() {
+    let wbuf = vec![0; 9000].into_boxed_slice();
+    let dir = t!(TempDir::new("tokio-file"));
+    let path = dir.path().join("read_at");
+    let mut f = t!(fs::File::create(&path));
+    f.write(&wbuf).expect("write failed");
+    let mut l = t!(Core::new());
+    let file = t!(File::open(&path, l.handle()));
+    let metadata = file.metadata().unwrap();
+    assert_eq!(9000, metadata.len());
+}
+
+#[test]
 fn read_at() {
     const WBUF: &'static [u8] = b"abcdef";
     const EXPECT: &'static [u8] = b"cdef";
