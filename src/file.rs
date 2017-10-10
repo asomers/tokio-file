@@ -94,6 +94,7 @@ impl<T: FutFromIsize> AioFut<T> {
 }
 
 /// Basically a Tokio file handle
+#[derive(Debug)]
 pub struct File {
     file: fs::File,
     handle: Handle
