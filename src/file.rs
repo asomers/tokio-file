@@ -82,10 +82,9 @@ impl<T: FutFromIsize> AioFut<T> {
                 io.get_ref().aio_return().map(|x| T::from_isize(x)),
             AioOp::Lio(ref mut io) => {
                 let r = io.get_mut()
-                .aio_return()
                 .iter_mut()
                 .fold(0, |acc, res| {
-                    acc + res.unwrap()
+                    acc + res.aio_return().unwrap()
                 });
                 Ok(T::from_isize(r))
             }
