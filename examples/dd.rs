@@ -7,19 +7,20 @@
 //!     cargo run --example dd -b 4096 -c 100 if=/tmp/infile of=/tmp/outfile
 //!     cmp /tmp/infile /tmp/outfile
 
+extern crate bytes;
 extern crate futures;
 extern crate getopts;
 extern crate libc;
 extern crate tokio_core;
 extern crate tokio_file;
 
+use bytes::BytesMut;
 use futures::future::{Future, ok};
 use futures::{Stream, stream};
 use getopts::Options;
 use libc::{off_t};
 use std::env;
 use std::cell::Cell;
-use std::rc::Rc;
 use std::str::FromStr;
 use tokio_core::reactor::Core;
 use tokio_file::File;
@@ -84,17 +85,18 @@ fn main() {
     // early.
     let stream = stream::iter_ok(0..dd.count);
     let fut = stream.for_each(|block| {
-        let buf = Rc::new(vec![0; bs].into_boxed_slice());
-        let bufclone = buf.clone();
+        let rbuf = BytesMut::from(vec![0; bs]);
+        //let bufclone = &buf;
         let ofs = (dd.bs * block) as off_t;
-        dd.infile.read_at(buf.clone(), ofs)
+        dd.infile.read_at(rbuf, ofs)
         .unwrap()
-        .and_then(|_| {
-            let x = dd.outfile.write_at(bufclone, dd.ofs.get());
+        .and_then(|r| {
+            let wbuf = r.buf.unwrap();
+            let x = dd.outfile.write_at(wbuf, dd.ofs.get());
             x
             .unwrap()
-            .and_then(|wlen| {
-                dd.ofs.set(dd.ofs.get() + wlen as off_t);
+            .and_then(|r| {
+                dd.ofs.set(dd.ofs.get() + r.value as off_t);
                 ok(())
             })
         })

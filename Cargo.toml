@@ -11,6 +11,7 @@ Asynchronous file I/O for Tokio
 categories = ["asynchronous", "filesystem"]
 
 [dependencies]
+bytes = "0.4"
 futures = "0.1.10"
 libc = "0.2"
 mio = { path = "/home/somers/src/rust/mio" }

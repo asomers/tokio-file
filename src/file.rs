@@ -3,6 +3,7 @@
 //! This module provides methods for asynchronous file I/O.  On BSD-based
 //! operating systems, it uses mio-aio.  On Linux, it can use libaio.
 
+use bytes::{Bytes, BytesMut};
 use libc::{off_t};
 use futures::{Async, Future, Poll};
 use mio::unix::UnixReady;
@@ -16,7 +17,6 @@ use std::marker::PhantomData;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
 use std::path::Path;
-use std::rc::Rc;
 
 #[derive(Debug)]
 enum AioOp {
@@ -48,6 +48,19 @@ pub struct AioFut<T> {
     state: AioState,
     phantom: PhantomData<T>
 }
+
+///// A window into a reference counted buffer
+/////
+///// Alternatively, it can be thought of as a small buffer that retains a
+///// reference to a larger whole.
+//pub struct SubBuffer {
+    ///// Reference to a larger buffer.  Keeps it frop drop'ping
+    //whole: Rc<Box<[u8]>>,
+    ///// Index within `whole` where the subbuffer begins
+    //start: usize,
+    ///// Length of the subbuffer in bytes
+    //len: usize
+//}
 
 // An unfortunate implementation detail.  I can't figure out how to make
 // `AioFut` generic without creating a public Trait like this
@@ -105,21 +118,20 @@ pub struct File {
 pub trait WriteAtable {
     fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t);
     fn length(&self) -> usize;
-    fn to_aiocb(&self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static>;
+    fn to_aiocb(self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static>;
 }
 
-impl WriteAtable for Rc<Box<[u8]>> {
-    fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t) {
-        liocb.emplace_boxed_slice(fd, offs, self.clone(), 0,
-                                  mio_aio::LioOpcode::LIO_WRITE);
+impl<'a> WriteAtable for Bytes {
+    fn emplace(&self, _liocb: &mut mio_aio::LioCb, _fd: RawFd, _offs: off_t) {
+        panic!("Unimplemented!");
     }
 
     fn length(&self) -> usize {
         self.len()
     }
 
-    fn to_aiocb(&self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static> {
-        mio_aio::AioCb::from_boxed_slice(fd,
+    fn to_aiocb(self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static> {
+        mio_aio::AioCb::from_bytes(fd,
             offs,
             self.clone(),
             0,  //priority
@@ -136,7 +148,7 @@ impl WriteAtable for &'static [u8] {
         self.len()
     }
 
-    fn to_aiocb(&self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static> {
+    fn to_aiocb(self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static> {
         mio_aio::AioCb::from_slice(fd,
             offs,
             self,
@@ -144,6 +156,25 @@ impl WriteAtable for &'static [u8] {
             aio::LioOpcode::LIO_NOP)
     }
 }
+
+//impl WriteAtable for SubBuffer {
+    //fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t) {
+        //panic!("Unimplemented!");
+    //}
+
+    //fn length(&self) -> usize {
+        //self.len
+    //}
+
+    //fn to_aiocb(&self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'a> {
+        //let end = self.start + self.len;
+        //mio_aio::AioCb::from_slice(fd,
+            //offs,
+            //&self.whole[self.start..end],
+            //0,  //priority
+            //aio::LioOpcode::LIO_NOP)
+    //}
+//}
 
 impl File {
     /// Get metadata from the underlying file
@@ -170,8 +201,8 @@ impl File {
     }
 
     /// Asynchronous equivalent of `std::fs::File::read_at`
-    pub fn read_at(&self, buf: Rc<Box<[u8]>>, offset: off_t) -> io::Result<AioFut<isize>> {
-        let aiocb = mio_aio::AioCb::from_boxed_slice(self.file.as_raw_fd(),
+    pub fn read_at(&self, buf: BytesMut, offset: off_t) -> io::Result<AioFut<isize>> {
+        let aiocb = mio_aio::AioCb::from_bytes_mut(self.file.as_raw_fd(),
                             offset,  //offset
                             buf,
                             0,  //priority
@@ -206,13 +237,13 @@ impl File {
     ///             are valid.
     /// `Err(x)`:   An error occurred before issueing the operation.  The result
     ///             may be `drop`ped.
-    pub fn readv_at(&self, bufs: &[Rc<Box<[u8]>>], offset: off_t) -> io::Result<AioFut<isize>> {
+    pub fn readv_at(&self, mut bufs: Vec<BytesMut>, offset: off_t) -> io::Result<AioFut<isize>> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
-        for buf in bufs {
-            liocb.emplace_boxed_slice(self.file.as_raw_fd(), offs, buf.clone(),
-                                      0, mio_aio::LioOpcode::LIO_READ);
+        for buf in bufs.drain(..) {
             offs += buf.len() as off_t;
+            liocb.emplace_bytes_mut(self.file.as_raw_fd(), offs, buf,
+                                      0, mio_aio::LioOpcode::LIO_READ);
         };
         Ok(AioFut::<isize>{
             op: AioOp::Lio(try!(PollEvented::new(liocb, &self.handle))),
@@ -257,11 +288,21 @@ impl File {
     }
 }
 
+/// This is what you get from polling an `AioFut`
+pub struct AioResult<T> {
+    /// This is what the AIO operation would've returned, had it been
+    /// synchronous.  Either `isize` or `()`
+    pub value: T,
+    /// Optionally, return ownership of the buffer that was used to create the
+    /// AIO operation.
+    pub buf: Option<Bytes>
+}
+
 impl<T: FutFromIsize> Future for AioFut<T> {
-    type Item = T;
+    type Item = AioResult<T>;
     type Error = nix::Error;
 
-    fn poll(&mut self) -> Poll<T, nix::Error> {
+    fn poll(&mut self) -> Poll<AioResult<T>, nix::Error> {
         if let AioState::Allocated = self.state {
             let _ = match self.op {
                 AioOp::Fsync(ref pe) => pe.get_ref().fsync(aio::AioFsyncMode::O_SYNC),
@@ -282,11 +323,27 @@ impl<T: FutFromIsize> Future for AioFut<T> {
                     io.poll_ready(UnixReady::lio().into())
         };
         if poll_result == Async::NotReady {
-        //if io.poll_ready(UnixReady::aio().into()) == Async::NotReady {
             return Ok(Async::NotReady);
         }
+        let buf = {
+            let mut op = match self.op {
+                AioOp::Fsync(ref mut op) => op,
+                AioOp::Read(ref mut op) => op,
+                AioOp::Write(ref mut op) => op,
+                AioOp::Lio(_) => panic!("TODO")
+            };
+            let aiocb_ref = op.get_mut();
+            let bufref = unsafe { aiocb_ref.buf_ref() };
+            match bufref {
+                mio_aio::BufRef::None => None,
+                mio_aio::BufRef::BoxedSlice(_) =>
+                    unreachable!("tokio-file doesn't use BoxedSlice"),
+                mio_aio::BufRef::Bytes(x) => Some(x),
+                mio_aio::BufRef::BytesMut(x) => Some(x.freeze())
+            }
+        };
         match self.aio_return() {
-            Ok(x) => Ok(Async::Ready(x)),
+            Ok(x) => Ok(Async::Ready(AioResult{value: x, buf: buf})),
             Err(x) => Err(x)
         }
     }
