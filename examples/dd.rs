@@ -91,12 +91,12 @@ fn main() {
         dd.infile.read_at(rbuf, ofs)
         .unwrap()
         .and_then(|r| {
-            let wbuf = r.buf.unwrap();
+            let wbuf = r.into_buf_ref().into_bytes_mut().unwrap().freeze();
             let x = dd.outfile.write_at(wbuf, dd.ofs.get());
             x
             .unwrap()
             .and_then(|r| {
-                dd.ofs.set(dd.ofs.get() + r.value as off_t);
+                dd.ofs.set(dd.ofs.get() + r.value.unwrap() as off_t);
                 ok(())
             })
         })

@@ -10,7 +10,7 @@ use std::io::Read;
 use std::io::Write;
 use std::ops::Deref;
 use tempdir::TempDir;
-use tokio_file::File;
+use tokio_file::{BufRef, File};
 use tokio_core::reactor::Core;
 
 macro_rules! t {
@@ -48,9 +48,9 @@ fn read_at() {
     let file = t!(File::open(&path, l.handle()));
     let fut = file.read_at(rbuf, off).ok().expect("read_at failed early");
     let r = t!(l.run(fut));
-    assert_eq!(r.value as usize, EXPECT.len());
+    assert_eq!(r.value.unwrap() as usize, EXPECT.len());
 
-    assert_eq!(r.buf.unwrap().deref().deref(), EXPECT);
+    assert_eq!(r.buf.into_bytes_mut().unwrap(), EXPECT);
 }
 
 #[test]
@@ -68,10 +68,8 @@ fn read_at_long() {
     let file = t!(File::open(&path, l.handle()));
     let fut = file.read_at(rbuf, off).ok().expect("read_at failed early");
     let r = t!(l.run(fut));
-    assert_eq!(r.value as usize, EXPECT.len());
-
-    //println!("rbuf p={:?} => {:?}", rbuf.as_ptr(), unsafe{*rbuf.as_ptr()});
-    assert_eq!(r.buf.unwrap().deref().deref(), EXPECT);
+    assert_eq!(r.value.unwrap() as usize, EXPECT.len());
+    assert_eq!(r.buf.into_bytes_mut().unwrap(), EXPECT);
 }
 
 #[test]
@@ -91,12 +89,25 @@ fn readv_at() {
     let mut l = t!(Core::new());
     let file = t!(File::open(&path, l.handle()));
     let fut = file.readv_at(rbufs, off).ok().expect("read_at failed early");
-    let r = t!(l.run(fut));
-    assert_eq!(r.value as usize, EXPECT0.len() + EXPECT1.len());
+    let mut ri = t!(l.run(fut));
 
-    // TODO: fix readv_at's buffer handling
-    assert_eq!(r.buf.unwrap().deref().deref(), EXPECT0);
-    //assert_eq!(r.buf.unwrap().deref().deref(), EXPECT1);
+    let r0 = ri.next().unwrap();
+    assert_eq!(r0.value.unwrap() as usize, EXPECT0.len());
+    if let BufRef::BytesMut(buf) = r0.buf {
+        assert_eq!(buf, EXPECT0);
+    } else {
+        panic!("Unexpected buffer type");
+    }
+
+    let r1 = ri.next().unwrap();
+    assert_eq!(r1.value.unwrap() as usize, EXPECT1.len());
+    if let BufRef::BytesMut(buf) = r1.buf {
+        assert_eq!(buf, EXPECT1);
+    } else {
+        panic!("Unexpected buffer type");
+    }
+
+    assert!(ri.next().is_none());
 }
 
 #[test]
@@ -107,13 +118,11 @@ fn sync_all() {
     let path = dir.path().join("sync_all");
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
-    {
-        let mut l = t!(Core::new());
-        let file = t!(File::open(&path, l.handle()));
-        let fut = file.sync_all().ok().expect("sync_all failed early");
-        let r = t!(l.run(fut));
-        assert_eq!(r.value, ());
-    }
+    let mut l = t!(Core::new());
+    let file = t!(File::open(&path, l.handle()));
+    let fut = file.sync_all().ok().expect("sync_all failed early");
+    let r = t!(l.run(fut));
+    assert!(r.value.is_none());
 }
 
 #[test]
@@ -128,7 +137,7 @@ fn write_at() {
         let file = t!(File::open(&path, l.handle()));
         let fut = file.write_at(wbuf.clone(), 0).ok().expect("write_at failed early");
         let r = t!(l.run(fut));
-        assert_eq!(r.value as usize, wbuf.len());
+        assert_eq!(r.value.unwrap() as usize, wbuf.len());
     }
 
     let mut f = t!(fs::File::open(&path));
@@ -142,19 +151,33 @@ fn writev_at() {
     const EXPECT: &'static [u8] = b"abcdefghij";
     let wbuf0 = Bytes::from(&b"abcdef"[..]);
     let wbuf1 = Bytes::from(&b"ghij"[..]);
-    let total_len = wbuf0.len() + wbuf1.len();
     let wbufs = [wbuf0, wbuf1];
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("writev_at");
-    {
-        let mut l = t!(Core::new());
-        let file = t!(File::open(&path, l.handle()));
-        let fut = file.writev_at(&wbufs, 0).ok().expect("writev_at failed early");
-        let r = t!(l.run(fut));
-        assert_eq!(r.value as usize, total_len);
+    let mut l = t!(Core::new());
+    let file = t!(File::open(&path, l.handle()));
+    let fut = file.writev_at(&wbufs, 0).ok().expect("writev_at failed early");
+    let mut wi = t!(l.run(fut));
+
+    let w0 = wi.next().unwrap();
+    assert_eq!(w0.value.unwrap() as usize, wbufs[0].len());
+    if let BufRef::Bytes(buf) = w0.buf {
+        assert_eq!(buf, wbufs[0]);
+    } else {
+        panic!("Unexpected buffer type");
     }
+
+    let w1 = wi.next().unwrap();
+    assert_eq!(w1.value.unwrap() as usize, wbufs[1].len());
+    if let BufRef::Bytes(buf) = w1.buf {
+        assert_eq!(buf, wbufs[1]);
+    } else {
+        panic!("Unexpected buffer type");
+    }
+
+    assert!(wi.next().is_none());
 
     let mut f = t!(fs::File::open(&path));
     let len = t!(f.read_to_end(&mut rbuf));
@@ -174,7 +197,7 @@ fn write_at_static() {
         let file = t!(File::open(&path, l.handle()));
         let fut = file.write_at(WBUF, 0).ok().expect("write_at failed early");
         let r = t!(l.run(fut));
-        assert_eq!(r.value as usize, WBUF.len());
+        assert_eq!(r.value.unwrap() as usize, WBUF.len());
     }
 
     let mut f = t!(fs::File::open(&path));
@@ -194,7 +217,7 @@ fn write_at_bytes() {
     let file = t!(File::open(&path, l.handle()));
     let fut = file.write_at(wbuf.clone(), 0).ok().expect("write_at failed early");
     let r = t!(l.run(fut));
-    assert_eq!(r.value as usize, wbuf.len());
+    assert_eq!(r.value.unwrap() as usize, wbuf.len());
 
     let mut f = t!(fs::File::open(&path));
     let len = t!(f.read_to_end(&mut rbuf));
@@ -207,19 +230,23 @@ fn writev_at_static() {
     const EXPECT: &'static [u8] = b"abcdefghi";
     const WBUF0: &'static [u8] = b"abcdef";
     const WBUF1: &'static [u8] = b"ghi";
-    let total_len = WBUF0.len() + WBUF1.len();
     let wbufs = [WBUF0, WBUF1];
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("writev_at_static");
-    {
-        let mut l = t!(Core::new());
-        let file = t!(File::open(&path, l.handle()));
-        let fut = file.writev_at(&wbufs, 0).ok().expect("writev_at failed early");
-        let r = t!(l.run(fut));
-        assert_eq!(r.value as usize, total_len);
-    }
+    let mut l = t!(Core::new());
+    let file = t!(File::open(&path, l.handle()));
+    let fut = file.writev_at(&wbufs, 0).ok().expect("writev_at failed early");
+    let mut wi = t!(l.run(fut));
+
+    let w0 = wi.next().unwrap();
+    assert_eq!(w0.value.unwrap() as usize, wbufs[0].len());
+
+    let w1 = wi.next().unwrap();
+    assert_eq!(w1.value.unwrap() as usize, wbufs[1].len());
+
+    assert!(wi.next().is_none());
 
     let mut f = t!(fs::File::open(&path));
     let len = t!(f.read_to_end(&mut rbuf));
