@@ -8,7 +8,6 @@ use bytes::{Bytes, BytesMut};
 use std::fs;
 use std::io::Read;
 use std::io::Write;
-use std::ops::Deref;
 use tempdir::TempDir;
 use tokio_file::{BufRef, File};
 use tokio_core::reactor::Core;
@@ -132,18 +131,16 @@ fn write_at() {
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("write_at");
-    {
-        let mut l = t!(Core::new());
-        let file = t!(File::open(&path, l.handle()));
-        let fut = file.write_at(wbuf.clone(), 0).ok().expect("write_at failed early");
-        let r = t!(l.run(fut));
-        assert_eq!(r.value.unwrap() as usize, wbuf.len());
-    }
+    let mut l = t!(Core::new());
+    let file = t!(File::open(&path, l.handle()));
+    let fut = file.write_at(wbuf.clone(), 0).ok().expect("write_at failed early");
+    let r = t!(l.run(fut));
+    assert_eq!(r.value.unwrap() as usize, wbuf.len());
 
     let mut f = t!(fs::File::open(&path));
     let len = t!(f.read_to_end(&mut rbuf));
     assert_eq!(len, wbuf.len());
-    assert_eq!(rbuf, wbuf.deref().deref());
+    assert_eq!(rbuf, wbuf);
 }
 
 #[test]
@@ -204,25 +201,6 @@ fn write_at_static() {
     let len = t!(f.read_to_end(&mut rbuf));
     assert_eq!(len, WBUF.len());
     assert_eq!(rbuf, WBUF);
-}
-
-#[test]
-fn write_at_bytes() {
-    let wbuf = Bytes::from(&"abcdef"[..]);
-    let mut rbuf = Vec::new();
-
-    let dir = t!(TempDir::new("tokio-file"));
-    let path = dir.path().join("write_at");
-    let mut l = t!(Core::new());
-    let file = t!(File::open(&path, l.handle()));
-    let fut = file.write_at(wbuf.clone(), 0).ok().expect("write_at failed early");
-    let r = t!(l.run(fut));
-    assert_eq!(r.value.unwrap() as usize, wbuf.len());
-
-    let mut f = t!(fs::File::open(&path));
-    let len = t!(f.read_to_end(&mut rbuf));
-    assert_eq!(len, wbuf.len());
-    assert_eq!(rbuf, wbuf);
 }
 
 #[test]
