@@ -156,7 +156,6 @@ impl Future for LioFut {
                 mio_aio::BufRef::None => BufRef::None,
                 mio_aio::BufRef::Bytes(x) => BufRef::Bytes(x),
                 mio_aio::BufRef::BytesMut(x) => BufRef::BytesMut(x),
-                _ => unreachable!("Unexpected BufRef type")
             };
             AioResult{value: Some(value), buf: buf}
         }));
@@ -365,7 +364,6 @@ impl Future for AioFut {
                 mio_aio::BufRef::None => BufRef::None,
                 mio_aio::BufRef::Bytes(x) => BufRef::Bytes(x),
                 mio_aio::BufRef::BytesMut(x) => BufRef::BytesMut(x),
-                _ => unreachable!("Unexpected BufRef type")
             }
         };
         match self.aio_return() {
