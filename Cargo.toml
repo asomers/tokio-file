@@ -16,7 +16,7 @@ futures = "0.1.10"
 libc = "0.2"
 mio = "0.6.13"
 nix = "0.10.0"
-mio-aio = { path = "/home/somers/src/rust/mio-aio" }
+mio-aio = { git = "git://github.com/asomers/mio-aio.git", rev = "e82c7ad" }
 tokio-core = { path = "/home/somers/src/rust/tokio-core" }
 
 [dev-dependencies]
