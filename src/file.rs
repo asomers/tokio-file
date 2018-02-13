@@ -148,7 +148,6 @@ impl Future for LioFut {
         let mut op = None;
         mem::swap(&mut op, &mut self.op);
         let liocb : mio_aio::LioCb<'static> = op.unwrap().into_io();
-        //let liocb : mio_aio::LioCb<'static> = self.op.into_io();
         let iter = Box::new(liocb.into_aiocbs().map(|aiocb| {
             // TODO: handle the error case
             let value = aiocb.aio_return().unwrap();
