@@ -1,16 +1,18 @@
 extern crate bytes;
 extern crate futures;
 extern crate tempdir;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_file;
 
 use bytes::{Bytes, BytesMut};
+use futures::future::lazy;
 use std::fs;
 use std::io::Read;
 use std::io::Write;
 use tempdir::TempDir;
 use tokio_file::{BufRef, File};
-use tokio_core::reactor::Core;
+use tokio::executor::current_thread;
+use tokio::reactor::Handle;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -26,8 +28,7 @@ fn metadata() {
     let path = dir.path().join("read_at");
     let mut f = t!(fs::File::create(&path));
     f.write(&wbuf).expect("write failed");
-    let l = t!(Core::new());
-    let file = t!(File::open(&path, l.handle()));
+    let file = t!(File::open(&path, Handle::current()));
     let metadata = file.metadata().unwrap();
     assert_eq!(9000, metadata.len());
 }
@@ -43,10 +44,10 @@ fn read_at() {
     let path = dir.path().join("read_at_bytes_mut");
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
-    let mut l = t!(Core::new());
-    let file = t!(File::open(&path, l.handle()));
-    let fut = file.read_at(rbuf, off).ok().expect("read_at failed early");
-    let r = t!(l.run(fut));
+    let file = t!(File::open(&path, Handle::current()));
+    let r = t!(current_thread::block_on_all(lazy(|| {
+        file.read_at(rbuf, off).expect("read_at failed early")
+    })));
     assert_eq!(r.value.unwrap() as usize, EXPECT.len());
 
     assert_eq!(r.buf.into_bytes_mut().unwrap(), EXPECT);
@@ -63,10 +64,10 @@ fn read_at_long() {
     let path = dir.path().join("read_at_bytes_mut");
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
-    let mut l = t!(Core::new());
-    let file = t!(File::open(&path, l.handle()));
-    let fut = file.read_at(rbuf, off).ok().expect("read_at failed early");
-    let r = t!(l.run(fut));
+    let file = t!(File::open(&path, Handle::current()));
+    let r = t!(current_thread::block_on_all(lazy(|| {
+        file.read_at(rbuf, off).expect("read_at failed early")
+    })));
     assert_eq!(r.value.unwrap() as usize, EXPECT.len());
     assert_eq!(r.buf.into_bytes_mut().unwrap(), EXPECT);
 }
@@ -85,10 +86,10 @@ fn readv_at() {
     let path = dir.path().join("readv_at");
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
-    let mut l = t!(Core::new());
-    let file = t!(File::open(&path, l.handle()));
-    let fut = file.readv_at(rbufs, off).ok().expect("read_at failed early");
-    let mut ri = t!(l.run(fut));
+    let file = t!(File::open(&path, Handle::current()));
+    let mut ri = t!(current_thread::block_on_all(lazy(|| {
+        file.readv_at(rbufs, off).ok().expect("read_at failed early")
+    })));
 
     let r0 = ri.next().unwrap();
     assert_eq!(r0.value.unwrap() as usize, EXPECT0.len());
@@ -117,10 +118,10 @@ fn sync_all() {
     let path = dir.path().join("sync_all");
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
-    let mut l = t!(Core::new());
-    let file = t!(File::open(&path, l.handle()));
-    let fut = file.sync_all().ok().expect("sync_all failed early");
-    let r = t!(l.run(fut));
+    let file = t!(File::open(&path, Handle::current()));
+    let r = t!(current_thread::block_on_all(lazy(|| {
+        file.sync_all().ok().expect("sync_all failed early")
+    })));
     assert!(r.value.is_none());
 }
 
@@ -131,10 +132,10 @@ fn write_at() {
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("write_at");
-    let mut l = t!(Core::new());
-    let file = t!(File::open(&path, l.handle()));
-    let fut = file.write_at(wbuf.clone(), 0).ok().expect("write_at failed early");
-    let r = t!(l.run(fut));
+    let file = t!(File::open(&path, Handle::current()));
+    let r = t!(current_thread::block_on_all(lazy(|| {
+        file.write_at(wbuf.clone(), 0).ok().expect("write_at failed early")
+    })));
     assert_eq!(r.value.unwrap() as usize, wbuf.len());
 
     let mut f = t!(fs::File::open(&path));
@@ -153,10 +154,10 @@ fn writev_at() {
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("writev_at");
-    let mut l = t!(Core::new());
-    let file = t!(File::open(&path, l.handle()));
-    let fut = file.writev_at(&wbufs, 0).ok().expect("writev_at failed early");
-    let mut wi = t!(l.run(fut));
+    let file = t!(File::open(&path, Handle::current()));
+    let mut wi = t!(current_thread::block_on_all(lazy(|| {
+        file.writev_at(&wbufs, 0).ok().expect("writev_at failed early")
+    })));
 
     let w0 = wi.next().unwrap();
     assert_eq!(w0.value.unwrap() as usize, wbufs[0].len());
@@ -190,10 +191,10 @@ fn write_at_static() {
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("write_at");
     {
-        let mut l = t!(Core::new());
-        let file = t!(File::open(&path, l.handle()));
-        let fut = file.write_at(WBUF, 0).ok().expect("write_at failed early");
-        let r = t!(l.run(fut));
+        let file = t!(File::open(&path, Handle::current()));
+        let r = t!(current_thread::block_on_all(lazy(|| {
+            file.write_at(WBUF, 0).ok().expect("write_at failed early")
+        })));
         assert_eq!(r.value.unwrap() as usize, WBUF.len());
     }
 
@@ -213,10 +214,10 @@ fn writev_at_static() {
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("writev_at_static");
-    let mut l = t!(Core::new());
-    let file = t!(File::open(&path, l.handle()));
-    let fut = file.writev_at(&wbufs, 0).ok().expect("writev_at failed early");
-    let mut wi = t!(l.run(fut));
+    let file = t!(File::open(&path, Handle::current()));
+    let mut wi = t!(current_thread::block_on_all(lazy(|| {
+        file.writev_at(&wbufs, 0).ok().expect("writev_at failed early")
+    })));
 
     let w0 = wi.next().unwrap();
     assert_eq!(w0.value.unwrap() as usize, wbufs[0].len());

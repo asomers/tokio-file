@@ -10,7 +10,7 @@ use mio::unix::UnixReady;
 use mio_aio;
 use nix::sys::aio;
 use nix;
-use tokio_core::reactor::{Handle, PollEvented};
+use tokio::reactor::{Handle, PollEvented};
 use std::{fs, io, mem};
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
@@ -141,13 +141,13 @@ impl Future for LioFut {
                 .listio().expect("mio_aio::listio");
             self.state = AioState::InProgress;
         }
-        let poll_result = self.op.as_ref().unwrap().poll_ready(UnixReady::lio().into());
+        let poll_result = self.op.as_mut().unwrap().poll_ready(UnixReady::lio().into());
         if poll_result == Async::NotReady {
             return Ok(Async::NotReady);
         }
         let mut op = None;
         mem::swap(&mut op, &mut self.op);
-        let liocb : mio_aio::LioCb<'static> = op.unwrap().into_io();
+        let liocb : mio_aio::LioCb<'static> = op.unwrap().into_inner();
         let iter = Box::new(liocb.into_aiocbs().map(|aiocb| {
             // TODO: handle the error case
             let value = aiocb.aio_return().unwrap();
@@ -340,13 +340,13 @@ impl Future for AioFut {
             self.state = AioState::InProgress;
         }
         let poll_result = match self.op {
-                AioOp::Fsync(ref io) =>
+                AioOp::Fsync(ref mut io) =>
                     io.poll_ready(UnixReady::aio().into()),
-                AioOp::Read(ref io) =>
+                AioOp::Read(ref mut io) =>
                     io.poll_ready(UnixReady::aio().into()),
-                AioOp::Write(ref io) =>
+                AioOp::Write(ref mut io) =>
                     io.poll_ready(UnixReady::aio().into()),
-                //AioOp::Lio(ref io) =>
+                //AioOp::Lio(ref mut io) =>
                     //io.poll_ready(UnixReady::lio().into())
         };
         if poll_result == Async::NotReady {

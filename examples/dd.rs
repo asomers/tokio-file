@@ -11,20 +11,21 @@ extern crate bytes;
 extern crate futures;
 extern crate getopts;
 extern crate libc;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_file;
 
 use bytes::BytesMut;
 use futures::future::{Future, ok};
+use futures::future::lazy;
 use futures::{Stream, stream};
 use getopts::Options;
 use libc::{off_t};
 use std::env;
 use std::cell::Cell;
 use std::str::FromStr;
-use tokio_core::reactor::Core;
+use tokio::executor::current_thread;
+use tokio::reactor::Handle;
 use tokio_file::File;
-use tokio_core::reactor::Handle;
 
 struct Dd {
     pub bs: usize,
@@ -77,29 +78,27 @@ fn main() {
     let infile = &matches.free[0];
     let outfile = &matches.free[1];
 
-    let mut l = Core::new().unwrap();
-    let dd = Dd::new(infile.as_str(), outfile.as_str(), l.handle(), bs, count);
-    
-    // Note: this simple example will fail if infile isn't big enough.  A robust
-    // program would use loop_fn instead of stream.for_each so it can exit
-    // early.
-    let stream = stream::iter_ok(0..dd.count);
-    let fut = stream.for_each(|block| {
-        let rbuf = BytesMut::from(vec![0; bs]);
-        //let bufclone = &buf;
-        let ofs = (dd.bs * block) as off_t;
-        dd.infile.read_at(rbuf, ofs)
-        .unwrap()
-        .and_then(|r| {
-            let wbuf = r.into_buf_ref().into_bytes_mut().unwrap().freeze();
-            let x = dd.outfile.write_at(wbuf, dd.ofs.get());
-            x
+    let dd = Dd::new(infile.as_str(), outfile.as_str(), Handle::current(), bs,
+                     count);
+    current_thread::block_on_all(lazy(|| {
+        // Note: this simple example will fail if infile isn't big enough.  A
+        // robust program would use loop_fn instead of stream.for_each so it can
+        // exit early.
+        let stream = stream::iter_ok(0..dd.count);
+        stream.for_each(|blocknum| {
+            let rbuf = BytesMut::from(vec![0; bs]);
+            let ofs = (dd.bs * blocknum) as off_t;
+            dd.infile.read_at(rbuf, ofs)
             .unwrap()
             .and_then(|r| {
-                dd.ofs.set(dd.ofs.get() + r.value.unwrap() as off_t);
-                ok(())
+                let wbuf = r.into_buf_ref().into_bytes_mut().unwrap().freeze();
+                dd.outfile.write_at(wbuf, dd.ofs.get())
+                .unwrap()
+                .and_then(|r| {
+                    dd.ofs.set(dd.ofs.get() + r.value.unwrap() as off_t);
+                    ok(())
+                })
             })
         })
-    });
-    l.run(fut).unwrap();
+    })).expect("Copying failed");
 }
