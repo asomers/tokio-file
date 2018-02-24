@@ -53,14 +53,6 @@ impl AioFut {
                 io.get_ref().aio_return().map(|x| Some(x)),
             AioOp::Write(ref io) =>
                 io.get_ref().aio_return().map(|x| Some(x)),
-            //AioOp::Lio(ref mut io) => {
-                //let r = io.get_mut()
-                //.iter_mut()
-                //.fold(0, |acc, res| {
-                    //acc + res.aio_return().unwrap()
-                //});
-                //Ok(Some(r))
-            //}
         }
     }
 }
@@ -346,8 +338,6 @@ impl Future for AioFut {
                     io.poll_ready(UnixReady::aio().into()),
                 AioOp::Write(ref mut io) =>
                     io.poll_ready(UnixReady::aio().into()),
-                //AioOp::Lio(ref mut io) =>
-                    //io.poll_ready(UnixReady::lio().into())
         };
         if poll_result == Async::NotReady {
             return Ok(Async::NotReady);
@@ -357,7 +347,6 @@ impl Future for AioFut {
                 AioOp::Fsync(ref mut op) => op,
                 AioOp::Read(ref mut op) => op,
                 AioOp::Write(ref mut op) => op,
-                //AioOp::Lio(_) => panic!("TODO")
             };
             let aiocb_ref = op.get_mut();
             let mio_bufref = unsafe { aiocb_ref.buf_ref() };
