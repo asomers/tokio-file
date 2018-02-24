@@ -137,8 +137,8 @@ impl Future for LioFut {
     // perhaps should return an iterator instead of a vec?
     fn poll(&mut self) -> Poll<Box<Iterator<Item = AioResult>>, nix::Error> {
         if let AioState::Allocated = self.state {
-            self.op.as_mut().unwrap().get_mut().listio().expect(
-                "listio failed early");
+            self.op.as_mut().unwrap().get_mut()
+                .listio().expect("mio_aio::listio");
             self.state = AioState::InProgress;
         }
         let poll_result = self.op.as_ref().unwrap().poll_ready(UnixReady::lio().into());
@@ -330,11 +330,13 @@ impl Future for AioFut {
     fn poll(&mut self) -> Poll<AioResult, nix::Error> {
         if let AioState::Allocated = self.state {
             let _ = match self.op {
-                AioOp::Fsync(ref pe) => pe.get_ref().fsync(aio::AioFsyncMode::O_SYNC),
-                AioOp::Read(ref pe) => pe.get_ref().read(),
-                AioOp::Write(ref pe) => pe.get_ref().write(),
-                //AioOp::Lio(ref mut pe) => pe.get_mut().listio()
-            };  // TODO: handle failure at this point
+                AioOp::Fsync(ref pe) => pe.get_ref()
+                    .fsync(aio::AioFsyncMode::O_SYNC).expect("mio_aio::fsync"),
+                AioOp::Read(ref pe) => pe.get_ref()
+                    .read().expect("mio_aio::read"),
+                AioOp::Write(ref pe) => pe.get_ref()
+                    .write().expect("mio_aio::write"),
+            };
             self.state = AioState::InProgress;
         }
         let poll_result = match self.op {
