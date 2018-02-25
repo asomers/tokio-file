@@ -11,15 +11,18 @@ Asynchronous file I/O for Tokio
 categories = ["asynchronous", "filesystem"]
 
 [dependencies]
-bytes = "0.4"
+bytes = "0.5"
 futures = "0.1.10"
 libc = "0.2"
 mio = "0.6.13"
 nix = "0.10.0"
-mio-aio = { git = "git://github.com/asomers/mio-aio.git", rev = "e82c7ad" }
+mio-aio = { git = "git://github.com/asomers/mio-aio.git", rev = "7672e6d" }
 tokio = { git = "git://github.com/tokio-rs/tokio.git", rev = "1190176" }
 
 [dev-dependencies]
 futures = "0.1"
 getopts = "0.2"
 tempdir = "0.3"
+
+[patch.crates-io]
+bytes = { git = "git://github.com/asomers/bytes.git", rev = "d249b73" }
