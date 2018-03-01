@@ -1,10 +1,10 @@
-extern crate bytes;
+extern crate divbuf;
 extern crate futures;
 extern crate tempdir;
 extern crate tokio;
 extern crate tokio_file;
 
-use bytes::{Bytes, BytesMut};
+use divbuf::DivBufShared;
 use futures::future::lazy;
 use std::fs;
 use std::io::Read;
@@ -37,11 +37,12 @@ fn metadata() {
 fn read_at() {
     const WBUF: &'static [u8] = b"abcdef";
     const EXPECT: &'static [u8] = b"cdef";
-    let rbuf = BytesMut::from(vec![0; 4]);
+    let dbs = DivBufShared::from(vec![0; 4]);
+    let rbuf = dbs.try_mut().unwrap();
     let off = 2;
 
     let dir = t!(TempDir::new("tokio-file"));
-    let path = dir.path().join("read_at_bytes_mut");
+    let path = dir.path().join("read_at_divbuf_mut");
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
     let file = t!(File::open(&path, Handle::current()));
@@ -50,26 +51,7 @@ fn read_at() {
     })));
     assert_eq!(r.value.unwrap() as usize, EXPECT.len());
 
-    assert_eq!(r.buf.into_bytes_mut().unwrap(), EXPECT);
-}
-
-#[test]
-fn read_at_long() {
-    const WBUF: &'static [u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
-    const EXPECT: &'static [u8] = b"cdefghijklmnopqrstuvwxyz0123456789";
-    let rbuf = BytesMut::from(vec![0; 34]);
-    let off = 2;
-
-    let dir = t!(TempDir::new("tokio-file"));
-    let path = dir.path().join("read_at_bytes_mut");
-    let mut f = t!(fs::File::create(&path));
-    f.write(WBUF).expect("write failed");
-    let file = t!(File::open(&path, Handle::current()));
-    let r = t!(current_thread::block_on_all(lazy(|| {
-        file.read_at(rbuf, off).expect("read_at failed early")
-    })));
-    assert_eq!(r.value.unwrap() as usize, EXPECT.len());
-    assert_eq!(r.buf.into_bytes_mut().unwrap(), EXPECT);
+    assert_eq!(r.buf.into_divbuf_mut().unwrap(), EXPECT[..]);
 }
 
 #[test]
@@ -77,8 +59,10 @@ fn readv_at() {
     const WBUF: &'static [u8] = b"abcdefghijklmnopqrwtuvwxyz";
     const EXPECT0: &'static [u8] = b"cdef";
     const EXPECT1: &'static [u8] = b"ghijklmn";
-    let rbuf0 = BytesMut::from(vec![0; 4]);
-    let rbuf1 = BytesMut::from(vec![0; 8]);
+    let dbs0 = DivBufShared::from(vec![0; 4]);
+    let rbuf0 = dbs0.try_mut().unwrap();
+    let dbs1 = DivBufShared::from(vec![0; 8]);
+    let rbuf1 = dbs1.try_mut().unwrap();
     let rbufs = vec![rbuf0, rbuf1];
     let off = 2;
 
@@ -93,16 +77,16 @@ fn readv_at() {
 
     let r0 = ri.next().unwrap();
     assert_eq!(r0.value.unwrap() as usize, EXPECT0.len());
-    if let BufRef::BytesMut(buf) = r0.buf {
-        assert_eq!(buf, EXPECT0);
+    if let BufRef::DivBufMut(buf) = r0.buf {
+        assert_eq!(buf, EXPECT0[..]);
     } else {
         panic!("Unexpected buffer type");
     }
 
     let r1 = ri.next().unwrap();
     assert_eq!(r1.value.unwrap() as usize, EXPECT1.len());
-    if let BufRef::BytesMut(buf) = r1.buf {
-        assert_eq!(buf, EXPECT1);
+    if let BufRef::DivBufMut(buf) = r1.buf {
+        assert_eq!(buf, EXPECT1[..]);
     } else {
         panic!("Unexpected buffer type");
     }
@@ -127,7 +111,8 @@ fn sync_all() {
 
 #[test]
 fn write_at() {
-    let wbuf = Bytes::from(&b"abcdef"[..]);
+    let dbs = DivBufShared::from(&b"abcdef"[..]);
+    let wbuf = dbs.try().unwrap();
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new("tokio-file"));
@@ -141,14 +126,16 @@ fn write_at() {
     let mut f = t!(fs::File::open(&path));
     let len = t!(f.read_to_end(&mut rbuf));
     assert_eq!(len, wbuf.len());
-    assert_eq!(rbuf, wbuf);
+    assert_eq!(wbuf, rbuf[..]);
 }
 
 #[test]
 fn writev_at() {
     const EXPECT: &'static [u8] = b"abcdefghij";
-    let wbuf0 = Bytes::from(&b"abcdef"[..]);
-    let wbuf1 = Bytes::from(&b"ghij"[..]);
+    let dbs0 = DivBufShared::from(&b"abcdef"[..]);
+    let wbuf0 = dbs0.try().unwrap();
+    let dbs1 = DivBufShared::from(&b"ghij"[..]);
+    let wbuf1 = dbs1.try().unwrap();
     let wbufs = [wbuf0, wbuf1];
     let mut rbuf = Vec::new();
 
@@ -161,7 +148,7 @@ fn writev_at() {
 
     let w0 = wi.next().unwrap();
     assert_eq!(w0.value.unwrap() as usize, wbufs[0].len());
-    if let BufRef::Bytes(buf) = w0.buf {
+    if let BufRef::DivBuf(buf) = w0.buf {
         assert_eq!(buf, wbufs[0]);
     } else {
         panic!("Unexpected buffer type");
@@ -169,7 +156,7 @@ fn writev_at() {
 
     let w1 = wi.next().unwrap();
     assert_eq!(w1.value.unwrap() as usize, wbufs[1].len());
-    if let BufRef::Bytes(buf) = w1.buf {
+    if let BufRef::DivBuf(buf) = w1.buf {
         assert_eq!(buf, wbufs[1]);
     } else {
         panic!("Unexpected buffer type");

@@ -1,6 +1,6 @@
 //! Tokio module for file I/O
 
-extern crate bytes;
+extern crate divbuf;
 extern crate futures;
 extern crate libc;
 extern crate mio;

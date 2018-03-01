@@ -7,14 +7,14 @@
 //!     cargo run --example dd -b 4096 -c 100 /tmp/infile /tmp/outfile
 //!     cmp /tmp/infile /tmp/outfile
 
-extern crate bytes;
+extern crate divbuf;
 extern crate futures;
 extern crate getopts;
 extern crate libc;
 extern crate tokio;
 extern crate tokio_file;
 
-use bytes::BytesMut;
+use divbuf::DivBufShared;
 use futures::future::{Future, ok};
 use futures::future::lazy;
 use futures::{Stream, stream};
@@ -86,12 +86,16 @@ fn main() {
         // exit early.
         let stream = stream::iter_ok(0..dd.count);
         stream.for_each(|blocknum| {
-            let rbuf = BytesMut::from(vec![0; bs]);
+            let dbs = DivBufShared::from(vec![0; bs]);
+            let rbuf = dbs.try_mut().unwrap();
             let ofs = (dd.bs * blocknum) as off_t;
             dd.infile.read_at(rbuf, ofs)
             .unwrap()
             .and_then(|r| {
-                let wbuf = r.into_buf_ref().into_bytes_mut().unwrap().freeze();
+                let wbuf = r.into_buf_ref()
+                    .into_divbuf_mut()
+                    .unwrap()
+                    .freeze();
                 dd.outfile.write_at(wbuf, dd.ofs.get())
                 .unwrap()
                 .and_then(|r| {

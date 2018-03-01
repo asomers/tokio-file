@@ -3,7 +3,7 @@
 //! This module provides methods for asynchronous file I/O.  On BSD-based
 //! operating systems, it uses mio-aio.  On Linux, it can use libaio.
 
-use bytes::{Bytes, BytesMut};
+use divbuf::{DivBuf, DivBufMut};
 use libc::{off_t};
 use futures::{Async, Future, Poll};
 use mio::unix::UnixReady;
@@ -64,25 +64,25 @@ pub enum BufRef {
     /// Either the `AioCb` has no buffer, as for an fsync operation, or a
     /// reference can't be stored, as when constructed from a slice.
     None,
-    /// Immutable shared ownership `Bytes` object
-    Bytes(Bytes),
-    /// Mutable uniquely owned `BytesMut` object
-    BytesMut(BytesMut)
+    /// Immutable shared ownership `DivBuf` object
+    DivBuf(DivBuf),
+    /// Mutable shared ownership owned `DivBufMut` object
+    DivBufMut(DivBufMut)
 }
 
 impl BufRef {
-    /// Return the inner `Bytes`, if any
-    pub fn into_bytes(self) -> Option<Bytes> {
+    /// Return the inner `DivBuf`, if any
+    pub fn into_divbuf(self) -> Option<DivBuf> {
         match self {
-            BufRef::Bytes(x) => Some(x),
+            BufRef::DivBuf(x) => Some(x),
             _ => None
         }
     }
 
-    /// Return the inner `BytesMut`, if any
-    pub fn into_bytes_mut(self) -> Option<BytesMut> {
+    /// Return the inner `DivBufMut`, if any
+    pub fn into_divbuf_mut(self) -> Option<DivBufMut> {
         match self {
-            BufRef::BytesMut(x) => Some(x),
+            BufRef::DivBufMut(x) => Some(x),
             _ => None
         }
     }
@@ -145,8 +145,11 @@ impl Future for LioFut {
             let value = aiocb.aio_return().unwrap();
             let buf = match aiocb.into_buf_ref() {
                 mio_aio::BufRef::None => BufRef::None,
-                mio_aio::BufRef::Bytes(x) => BufRef::Bytes(x),
-                mio_aio::BufRef::BytesMut(x) => BufRef::BytesMut(x),
+                mio_aio::BufRef::DivBuf(x) => BufRef::DivBuf(x),
+                mio_aio::BufRef::DivBufMut(x) => BufRef::DivBufMut(x),
+                // tokio-file doesn't implement Bytes, so mio-aio should never
+                // return them.
+                _ => unreachable!()
             };
             AioResult{value: Some(value), buf: buf}
         }));
@@ -170,9 +173,9 @@ pub trait WriteAtable {
     fn to_aiocb(self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static>;
 }
 
-impl<'a> WriteAtable for Bytes {
+impl<'a> WriteAtable for DivBuf {
     fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t) {
-        liocb.emplace_bytes(fd, offs, self.clone(), 0,
+        liocb.emplace_divbuf(fd, offs, self.clone(), 0,
                             mio_aio::LioOpcode::LIO_WRITE);
     }
 
@@ -181,9 +184,9 @@ impl<'a> WriteAtable for Bytes {
     }
 
     fn to_aiocb(self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static> {
-        mio_aio::AioCb::from_bytes(fd,
+        mio_aio::AioCb::from_divbuf(fd,
             offs,
-            self.clone(),
+            self,
             0,  //priority
             aio::LioOpcode::LIO_NOP)
     }
@@ -232,8 +235,8 @@ impl File {
     }
 
     /// Asynchronous equivalent of `std::fs::File::read_at`
-    pub fn read_at(&self, buf: BytesMut, offset: off_t) -> io::Result<AioFut> {
-        let aiocb = mio_aio::AioCb::from_bytes_mut(self.file.as_raw_fd(),
+    pub fn read_at(&self, buf: DivBufMut, offset: off_t) -> io::Result<AioFut> {
+        let aiocb = mio_aio::AioCb::from_divbuf_mut(self.file.as_raw_fd(),
                             offset,  //offset
                             buf,
                             0,  //priority
@@ -267,12 +270,12 @@ impl File {
     ///             are valid.
     /// `Err(x)`:   An error occurred before issueing the operation.  The result
     ///             may be `drop`ped.
-    pub fn readv_at(&self, mut bufs: Vec<BytesMut>, offset: off_t) -> io::Result<LioFut> {
+    pub fn readv_at(&self, mut bufs: Vec<DivBufMut>, offset: off_t) -> io::Result<LioFut> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
         for buf in bufs.drain(..) {
             let buflen = buf.len();
-            liocb.emplace_bytes_mut(self.file.as_raw_fd(), offs, buf,
+            liocb.emplace_divbuf_mut(self.file.as_raw_fd(), offs, buf,
                                       0, mio_aio::LioOpcode::LIO_READ);
             offs += buflen as off_t;
         };
@@ -343,7 +346,7 @@ impl Future for AioFut {
             return Ok(Async::NotReady);
         }
         let buf = {
-            let mut op = match self.op {
+            let op = match self.op {
                 AioOp::Fsync(ref mut op) => op,
                 AioOp::Read(ref mut op) => op,
                 AioOp::Write(ref mut op) => op,
@@ -352,8 +355,11 @@ impl Future for AioFut {
             let mio_bufref = unsafe { aiocb_ref.buf_ref() };
             match mio_bufref {
                 mio_aio::BufRef::None => BufRef::None,
-                mio_aio::BufRef::Bytes(x) => BufRef::Bytes(x),
-                mio_aio::BufRef::BytesMut(x) => BufRef::BytesMut(x),
+                mio_aio::BufRef::DivBuf(x) => BufRef::DivBuf(x),
+                mio_aio::BufRef::DivBufMut(x) => BufRef::DivBufMut(x),
+                // tokio-file doesn't implement Bytes, so mio-aio should never
+                // return them.
+                _ => unreachable!()
             }
         };
         match self.aio_return() {

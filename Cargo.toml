@@ -11,12 +11,12 @@ Asynchronous file I/O for Tokio
 categories = ["asynchronous", "filesystem"]
 
 [dependencies]
-bytes = "0.4"
+divbuf = "0.1"
 futures = "0.1.10"
 libc = "0.2"
 mio = "0.6.13"
 nix = "0.10.0"
-mio-aio = { git = "git://github.com/asomers/mio-aio.git", rev = "e82c7ad" }
+mio-aio = { git = "git://github.com/asomers/mio-aio.git", rev = "326a19b" }
 tokio = { git = "git://github.com/tokio-rs/tokio.git", rev = "1190176" }
 
 [dev-dependencies]
