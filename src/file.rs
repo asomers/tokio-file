@@ -3,17 +3,17 @@
 //! This module provides methods for asynchronous file I/O.  On BSD-based
 //! operating systems, it uses mio-aio.  On Linux, it can use libaio.
 
-use divbuf::{DivBuf, DivBufMut};
 use libc::{off_t};
 use futures::{Async, Future, Poll};
 use mio::unix::UnixReady;
 use mio_aio;
+pub use mio_aio::BufRef;
 use nix::sys::aio;
 use nix;
 use tokio::reactor::{Handle, PollEvented};
 use std::{fs, io, mem};
+use std::borrow::{Borrow, BorrowMut};
 use std::os::unix::io::AsRawFd;
-use std::os::unix::io::RawFd;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -57,45 +57,6 @@ impl AioFut {
     }
 }
 
-/// Stores the buffer used by the underlying `AioCb`, if any.
-///
-/// For read operations, this will usually be the only reference to the buffer
-pub enum BufRef {
-    /// Either the `AioCb` has no buffer, as for an fsync operation, or a
-    /// reference can't be stored, as when constructed from a slice.
-    None,
-    /// Immutable shared ownership `DivBuf` object
-    DivBuf(DivBuf),
-    /// Mutable shared ownership owned `DivBufMut` object
-    DivBufMut(DivBufMut)
-}
-
-impl BufRef {
-    /// Return the inner `DivBuf`, if any
-    pub fn into_divbuf(self) -> Option<DivBuf> {
-        match self {
-            BufRef::DivBuf(x) => Some(x),
-            _ => None
-        }
-    }
-
-    /// Return the inner `DivBufMut`, if any
-    pub fn into_divbuf_mut(self) -> Option<DivBufMut> {
-        match self {
-            BufRef::DivBufMut(x) => Some(x),
-            _ => None
-        }
-    }
-
-    /// Is this `BufRef` `None`?
-    pub fn is_none(&self) -> bool {
-        match self {
-            &BufRef::None => true,
-            _ => false,
-        }
-    }
-}
-
 /// Holds the result of an individual aio or lio operation
 pub struct AioResult {
     /// This is what the AIO operation would've returned, had it been
@@ -118,7 +79,7 @@ impl AioResult {
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
 pub struct LioFut {
-    op: Option<PollEvented<mio_aio::LioCb<'static>>>,
+    op: Option<PollEvented<mio_aio::LioCb>>,
     state: AioState,
 }
 
@@ -139,19 +100,13 @@ impl Future for LioFut {
         }
         let mut op = None;
         mem::swap(&mut op, &mut self.op);
-        let liocb : mio_aio::LioCb<'static> = op.unwrap().into_inner();
-        let iter = Box::new(liocb.into_aiocbs().map(|aiocb| {
-            // TODO: handle the error case
-            let value = aiocb.aio_return().unwrap();
-            let buf = match aiocb.into_buf_ref() {
-                mio_aio::BufRef::None => BufRef::None,
-                mio_aio::BufRef::DivBuf(x) => BufRef::DivBuf(x),
-                mio_aio::BufRef::DivBufMut(x) => BufRef::DivBufMut(x),
-                // tokio-file doesn't implement Bytes, so mio-aio should never
-                // return them.
-                _ => unreachable!()
-            };
-            AioResult{value: Some(value), buf: buf}
+        let results = op.unwrap().into_inner().into_results();
+        let iter = Box::new(results.map(|lio_result| {
+            AioResult {
+                // TODO: handle the error case
+                value: Some(lio_result.result.unwrap()),
+                buf: lio_result.buf_ref
+            }
         }));
         Ok(Async::Ready(iter))
     }
@@ -162,52 +117,6 @@ impl Future for LioFut {
 pub struct File {
     file: fs::File,
     handle: Handle
-}
-
-/// Base trait of objects that can be passed to File::write_at
-///
-/// Tokio-file consumers should never call these methods directly.
-pub trait WriteAtable {
-    fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t);
-    fn length(&self) -> usize;
-    fn to_aiocb(self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static>;
-}
-
-impl<'a> WriteAtable for DivBuf {
-    fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t) {
-        liocb.emplace_divbuf(fd, offs, self.clone(), 0,
-                            mio_aio::LioOpcode::LIO_WRITE);
-    }
-
-    fn length(&self) -> usize {
-        self.len()
-    }
-
-    fn to_aiocb(self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static> {
-        mio_aio::AioCb::from_divbuf(fd,
-            offs,
-            self,
-            0,  //priority
-            aio::LioOpcode::LIO_NOP)
-    }
-}
-
-impl WriteAtable for &'static [u8] {
-    fn emplace(&self, liocb: &mut mio_aio::LioCb, fd: RawFd, offs: off_t) {
-        liocb.emplace_slice(fd, offs, self, 0, mio_aio::LioOpcode::LIO_WRITE);
-    }
-
-    fn length(&self) -> usize {
-        self.len()
-    }
-
-    fn to_aiocb(self, fd: RawFd, offs: off_t) -> mio_aio::AioCb<'static> {
-        mio_aio::AioCb::from_slice(fd,
-            offs,
-            self,
-            0,  //priority
-            aio::LioOpcode::LIO_NOP)
-    }
 }
 
 impl File {
@@ -235,8 +144,9 @@ impl File {
     }
 
     /// Asynchronous equivalent of `std::fs::File::read_at`
-    pub fn read_at(&self, buf: DivBufMut, offset: off_t) -> io::Result<AioFut> {
-        let aiocb = mio_aio::AioCb::from_divbuf_mut(self.file.as_raw_fd(),
+    pub fn read_at(&self, buf: Box<BorrowMut<[u8]>>,
+                   offset: off_t) -> io::Result<AioFut> {
+        let aiocb = mio_aio::AioCb::from_boxed_mut_slice(self.file.as_raw_fd(),
                             offset,  //offset
                             buf,
                             0,  //priority
@@ -270,12 +180,17 @@ impl File {
     ///             are valid.
     /// `Err(x)`:   An error occurred before issueing the operation.  The result
     ///             may be `drop`ped.
-    pub fn readv_at(&self, mut bufs: Vec<DivBufMut>, offset: off_t) -> io::Result<LioFut> {
+    pub fn readv_at(&self, mut bufs: Vec<Box<BorrowMut<[u8]>>>,
+                    offset: off_t) -> io::Result<LioFut> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
-        for buf in bufs.drain(..) {
-            let buflen = buf.len();
-            liocb.emplace_divbuf_mut(self.file.as_raw_fd(), offs, buf,
+        for mut buf in bufs.drain(..) {
+            let buflen = {
+                let borrowed : &mut BorrowMut<[u8]> = buf.borrow_mut();
+                let slice : &mut [u8] = borrowed.borrow_mut();
+                slice.len()
+            };
+            liocb.emplace_boxed_mut_slice(self.file.as_raw_fd(), offs, buf,
                                       0, mio_aio::LioOpcode::LIO_READ);
             offs += buflen as off_t;
         };
@@ -285,20 +200,31 @@ impl File {
     }
 
     /// Asynchronous equivalent of `std::fs::File::write_at`
-    pub fn write_at<T: WriteAtable>(&self, buf: T, offset: off_t) -> io::Result<AioFut> {
-        let aiocb = buf.to_aiocb(self.file.as_raw_fd(), offset);
+    pub fn write_at(&self, buf: Box<Borrow<[u8]>>,
+                    offset: off_t) -> io::Result<AioFut> {
+        let fd = self.file.as_raw_fd();
+        let aiocb = mio_aio::AioCb::from_boxed_slice(fd, offset, buf, 0,
+                                                     aio::LioOpcode::LIO_NOP);
         Ok(AioFut{
             op: AioOp::Write(try!(PollEvented::new(aiocb, &self.handle))),
             state: AioState::Allocated })
     }
 
     /// Asynchronous equivalent of `pwritev`
-    pub fn writev_at<T: WriteAtable>(&self, bufs: &[T], offset: off_t) -> io::Result<LioFut> {
+    pub fn writev_at(&self, mut bufs: Vec<Box<Borrow<[u8]>>>,
+                     offset: off_t) -> io::Result<LioFut> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
-        for buf in bufs {
-            buf.emplace(&mut liocb, self.file.as_raw_fd(), offs);
-            offs += buf.length() as off_t;
+        let fd = self.file.as_raw_fd();
+        for buf in bufs.drain(..) {
+            let buflen = {
+                let borrowed : &Borrow<[u8]> = buf.borrow();
+                let slice : &[u8] = borrowed.borrow();
+                slice.len()
+            };
+            liocb.emplace_boxed_slice(fd, offs, buf, 0,
+                                      mio_aio::LioOpcode::LIO_WRITE);
+            offs += buflen as off_t;
         };
 
         Ok(LioFut{
@@ -345,24 +271,13 @@ impl Future for AioFut {
         if poll_result == Async::NotReady {
             return Ok(Async::NotReady);
         }
-        let buf = {
-            let op = match self.op {
-                AioOp::Fsync(ref mut op) => op,
-                AioOp::Read(ref mut op) => op,
-                AioOp::Write(ref mut op) => op,
-            };
-            let aiocb_ref = op.get_mut();
-            let mio_bufref = unsafe { aiocb_ref.buf_ref() };
-            match mio_bufref {
-                mio_aio::BufRef::None => BufRef::None,
-                mio_aio::BufRef::DivBuf(x) => BufRef::DivBuf(x),
-                mio_aio::BufRef::DivBufMut(x) => BufRef::DivBufMut(x),
-                // tokio-file doesn't implement Bytes, so mio-aio should never
-                // return them.
-                _ => unreachable!()
-            }
+        let result = self.aio_return();
+        let buf = match self.op {
+            AioOp::Fsync(ref mut op) => op.get_mut().buf_ref(),
+            AioOp::Read(ref mut op) => op.get_mut().buf_ref(),
+            AioOp::Write(ref mut op) => op.get_mut().buf_ref(),
         };
-        match self.aio_return() {
+        match result {
             Ok(x) => Ok(Async::Ready(AioResult{value: x, buf: buf})),
             Err(x) => Err(x)
         }
