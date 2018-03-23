@@ -10,7 +10,7 @@ use mio_aio;
 pub use mio_aio::{BufRef, LioError};
 use nix::sys::aio;
 use nix;
-use tokio::reactor::{Handle, PollEvented};
+use tokio::reactor::{Handle, PollEvented2};
 use std::{fs, io, mem};
 use std::borrow::{Borrow, BorrowMut};
 use std::os::unix::io::AsRawFd;
@@ -18,9 +18,9 @@ use std::path::Path;
 
 #[derive(Debug)]
 enum AioOp {
-    Fsync(PollEvented<mio_aio::AioCb<'static>>),
-    Read(PollEvented<mio_aio::AioCb<'static>>),
-    Write(PollEvented<mio_aio::AioCb<'static>>),
+    Fsync(PollEvented2<mio_aio::AioCb<'static>>),
+    Read(PollEvented2<mio_aio::AioCb<'static>>),
+    Write(PollEvented2<mio_aio::AioCb<'static>>),
 }
 
 /// Represents the progress of a single AIO operation
@@ -82,7 +82,7 @@ impl AioResult {
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
 pub struct LioFut {
-    op: Option<PollEvented<mio_aio::LioCb>>,
+    op: Option<PollEvented2<mio_aio::LioCb>>,
     state: AioState,
 }
 
@@ -106,14 +106,14 @@ impl Future for LioFut {
                     return Err(nix::Error::Sys(nix::errno::Errno::EIO)),
             }
         }
-        let poll_result = self.op.as_mut().unwrap().poll_ready(UnixReady::lio().into());
+        let poll_result = self.op.as_mut().unwrap().poll_read_ready(UnixReady::lio().into()).unwrap();
         if poll_result == Async::NotReady {
             return Ok(Async::NotReady);
         }
         if let AioState::Incomplete = self.state {
             // Some requests must've completed; now issue the rest.
             let result = self.op.as_mut().unwrap().get_mut().resubmit();
-            self.op.as_mut().unwrap().need_read().unwrap();
+            self.op.as_mut().unwrap().clear_read_ready(UnixReady::lio().into()).unwrap();
             match result {
                 Ok(()) => {
                     self.state = AioState::InProgress;
@@ -130,7 +130,7 @@ impl Future for LioFut {
         }
         let mut op = None;
         mem::swap(&mut op, &mut self.op);
-        let iter = op.unwrap().into_inner().into_results(|iter| {
+        let iter = op.unwrap().into_inner().unwrap().into_results(|iter| {
             iter.map(|lr| {
                 AioResult{
                     // TODO: handle errors
@@ -184,7 +184,7 @@ impl File {
                             0,  //priority
                             aio::LioOpcode::LIO_NOP);
         Ok(AioFut{
-            op: AioOp::Read(try!(PollEvented::new(aiocb, &self.handle))),
+            op: AioOp::Read(try!(PollEvented2::new_with_handle(aiocb, &self.handle))),
             state: AioState::Allocated })
     }
 
@@ -227,7 +227,7 @@ impl File {
             offs += buflen as off_t;
         };
         Ok(LioFut{
-            op: Some(try!(PollEvented::new(liocb, &self.handle))),
+            op: Some(try!(PollEvented2::new_with_handle(liocb, &self.handle))),
             state: AioState::Allocated })
     }
 
@@ -238,7 +238,7 @@ impl File {
         let aiocb = mio_aio::AioCb::from_boxed_slice(fd, offset, buf, 0,
                                                      aio::LioOpcode::LIO_NOP);
         Ok(AioFut{
-            op: AioOp::Write(try!(PollEvented::new(aiocb, &self.handle))),
+            op: AioOp::Write(try!(PollEvented2::new_with_handle(aiocb, &self.handle))),
             state: AioState::Allocated })
     }
 
@@ -260,7 +260,7 @@ impl File {
         };
 
         Ok(LioFut{
-            op: Some(try!(PollEvented::new(liocb, &self.handle))),
+            op: Some(try!(PollEvented2::new_with_handle(liocb, &self.handle))),
             state: AioState::Allocated })
     }
 
@@ -271,7 +271,7 @@ impl File {
                             0,  //priority
                             );
         Ok(AioFut{
-            op: AioOp::Fsync(try!(PollEvented::new(aiocb, &self.handle))),
+            op: AioOp::Fsync(try!(PollEvented2::new_with_handle(aiocb, &self.handle))),
             state: AioState::Allocated })
     }
 }
@@ -294,12 +294,12 @@ impl Future for AioFut {
         }
         let poll_result = match self.op {
                 AioOp::Fsync(ref mut io) =>
-                    io.poll_ready(UnixReady::aio().into()),
+                    io.poll_read_ready(UnixReady::aio().into()),
                 AioOp::Read(ref mut io) =>
-                    io.poll_ready(UnixReady::aio().into()),
+                    io.poll_read_ready(UnixReady::aio().into()),
                 AioOp::Write(ref mut io) =>
-                    io.poll_ready(UnixReady::aio().into()),
-        };
+                    io.poll_read_ready(UnixReady::aio().into()),
+        }.unwrap();
         if poll_result == Async::NotReady {
             return Ok(Async::NotReady);
         }
