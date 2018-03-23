@@ -16,7 +16,7 @@ libc = "0.2"
 mio = "0.6.13"
 nix = { git = "https://github.com/asomers/nix", rev = "fef70ad" }
 mio-aio = { git = "git://github.com/asomers/mio-aio.git", rev = "655118c" }
-tokio = { git = "git://github.com/tokio-rs/tokio.git", rev = "2abeff0" }
+tokio = "0.1.4"
 
 [dev-dependencies]
 divbuf = { git = "https://github.com/asomers/divbuf", rev = "70104b4" }
