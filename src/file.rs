@@ -7,7 +7,7 @@ use libc::{off_t};
 use futures::{Async, Future, Poll};
 use mio::unix::UnixReady;
 use mio_aio;
-pub use mio_aio::BufRef;
+pub use mio_aio::{BufRef, LioError};
 use nix::sys::aio;
 use nix;
 use tokio::reactor::{Handle, PollEvented};
@@ -31,6 +31,9 @@ enum AioState {
     /// The AioFut has been submitted, ie with `write_at`, and is currently in
     /// progress, but its status has not been returned with `aio_return`
     InProgress,
+    /// An `LioFut` has been submitted and some of its constituent `AioCb`s are
+    /// in-progress, but some are not due to resource limitations.
+    Incomplete,
 }
 
 /// A Future representing an AIO operation.
@@ -85,30 +88,54 @@ pub struct LioFut {
 
 impl Future for LioFut {
     type Item = Box<Iterator<Item = AioResult>>;
-    type Error = nix::Error;
+    // TODO: define our own error type, instead of using mio-aio's
+    type Error = LioError;
 
-    // perhaps should return an iterator instead of a vec?
-    fn poll(&mut self) -> Poll<Box<Iterator<Item = AioResult>>, nix::Error> {
+    fn poll(&mut self) -> Poll<Box<Iterator<Item = AioResult>>, LioError> {
         if let AioState::Allocated = self.state {
-            self.op.as_mut().unwrap().get_mut()
-                .listio().expect("mio_aio::listio");
-            self.state = AioState::InProgress;
+            let result = self.op.as_mut().unwrap().get_mut().submit();
+            match result {
+                Ok(()) => self.state = AioState::InProgress,
+                Err(LioError::EINCOMPLETE) => {
+                    // EINCOMPLETE means that some requests failed, but some
+                    // were initiated
+                    self.state = AioState::Incomplete;
+                },
+                Err(e) => return Err(e)
+            }
         }
         let poll_result = self.op.as_mut().unwrap().poll_ready(UnixReady::lio().into());
         if poll_result == Async::NotReady {
             return Ok(Async::NotReady);
         }
+        if let AioState::Incomplete = self.state {
+            // Some requests must've completed; now issue the rest.
+            let result = self.op.as_mut().unwrap().get_mut().resubmit();
+            self.op.as_mut().unwrap().need_read().unwrap();
+            match result {
+                Ok(()) => {
+                    self.state = AioState::InProgress;
+                    return Ok(Async::NotReady);
+                },
+                Err(LioError::EINCOMPLETE) => {
+                    return Ok(Async::NotReady);
+                },
+                Err(e) => return Err(e)
+            }
+        }
         let mut op = None;
         mem::swap(&mut op, &mut self.op);
-        let results = op.unwrap().into_inner().into_results();
-        let iter = Box::new(results.map(|lio_result| {
-            AioResult {
-                // TODO: handle the error case
-                value: Some(lio_result.result.unwrap()),
-                buf: lio_result.buf_ref
-            }
-        }));
-        Ok(Async::Ready(iter))
+        let iter = op.unwrap().into_inner().into_results(|iter| {
+            iter.map(|lr| {
+                AioResult{
+                    // TODO: handle errors
+                    value: Some(lr.result.expect("aio_return")),
+                    buf: lr.buf_ref
+                }
+            })
+        });
+
+        Ok(Async::Ready(Box::new(iter)))
     }
 }
 

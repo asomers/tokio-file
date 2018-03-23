@@ -10,7 +10,7 @@ use std::borrow::{Borrow, BorrowMut};
 use std::fs;
 use std::io::{Read, Write};
 use tempdir::TempDir;
-use tokio_file::{BufRef, File};
+use tokio_file::File;
 use tokio::executor::current_thread;
 use tokio::reactor::Handle;
 
