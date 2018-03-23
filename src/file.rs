@@ -88,10 +88,9 @@ pub struct LioFut {
 
 impl Future for LioFut {
     type Item = Box<Iterator<Item = AioResult>>;
-    // TODO: define our own error type, instead of using mio-aio's
-    type Error = LioError;
+    type Error = nix::Error;
 
-    fn poll(&mut self) -> Poll<Box<Iterator<Item = AioResult>>, LioError> {
+    fn poll(&mut self) -> Poll<Box<Iterator<Item = AioResult>>, nix::Error> {
         if let AioState::Allocated = self.state {
             let result = self.op.as_mut().unwrap().get_mut().submit();
             match result {
@@ -101,7 +100,10 @@ impl Future for LioFut {
                     // were initiated
                     self.state = AioState::Incomplete;
                 },
-                Err(e) => return Err(e)
+                Err(LioError::EAGAIN) =>
+                    return Err(nix::Error::Sys(nix::errno::Errno::EAGAIN)),
+                Err(LioError::EIO) =>
+                    return Err(nix::Error::Sys(nix::errno::Errno::EIO)),
             }
         }
         let poll_result = self.op.as_mut().unwrap().poll_ready(UnixReady::lio().into());
@@ -120,7 +122,10 @@ impl Future for LioFut {
                 Err(LioError::EINCOMPLETE) => {
                     return Ok(Async::NotReady);
                 },
-                Err(e) => return Err(e)
+                Err(LioError::EAGAIN) =>
+                    return Err(nix::Error::Sys(nix::errno::Errno::EAGAIN)),
+                Err(LioError::EIO) =>
+                    return Err(nix::Error::Sys(nix::errno::Errno::EIO)),
             }
         }
         let mut op = None;
