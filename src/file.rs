@@ -282,14 +282,15 @@ impl Future for AioFut {
 
     fn poll(&mut self) -> Poll<AioResult, nix::Error> {
         if let AioState::Allocated = self.state {
-            let _ = match self.op {
+            let r = match self.op {
                 AioOp::Fsync(ref pe) => pe.get_ref()
-                    .fsync(aio::AioFsyncMode::O_SYNC).expect("mio_aio::fsync"),
-                AioOp::Read(ref pe) => pe.get_ref()
-                    .read().expect("mio_aio::read"),
-                AioOp::Write(ref pe) => pe.get_ref()
-                    .write().expect("mio_aio::write"),
+                    .fsync(aio::AioFsyncMode::O_SYNC),
+                AioOp::Read(ref pe) => pe.get_ref().read(),
+                AioOp::Write(ref pe) => pe.get_ref().write(),
             };
+            if r.is_err() {
+                return Err(r.unwrap_err());
+            }
             self.state = AioState::InProgress;
         }
         let poll_result = match self.op {

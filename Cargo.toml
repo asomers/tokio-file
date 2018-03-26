@@ -32,3 +32,7 @@ path = "tests/file.rs"
 [[test]]
 name = "lio_listio_incomplete"
 path = "tests/lio_listio_incomplete.rs"
+
+[[test]]
+name = "aio_write_eagain"
+path = "tests/aio_write_eagain.rs"

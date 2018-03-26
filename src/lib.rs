@@ -9,4 +9,4 @@ extern crate tokio;
 
 mod file;
 
-pub use file::{AioFut, BufRef, File};
+pub use file::{AioFut, AioResult, BufRef, File};
