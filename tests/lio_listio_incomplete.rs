@@ -1,14 +1,18 @@
 extern crate divbuf;
 extern crate futures;
+extern crate libc;
+extern crate nix;
 extern crate sysctl;
 extern crate tempdir;
 extern crate tokio;
 extern crate tokio_file;
 
 use divbuf::DivBufShared;
-use futures::future::lazy;
-use futures::Future;
+use futures::future;
+use libc::off_t;
+use nix::unistd::{SysconfVar, sysconf};
 use std::borrow::Borrow;
+use sysctl::CtlValue;
 use tempdir::TempDir;
 use tokio_file::File;
 use tokio::executor::current_thread;
@@ -27,47 +31,57 @@ macro_rules! t {
 // system's AIO resources.
 #[test]
 fn writev_at_eio() {
-    let limit = sysctl::value("vfs.aio.max_aio_queue_per_proc").unwrap();
-    let count = if let sysctl::CtlValue::Int(x) = limit {
-        // This should cause the second lio_listio call to return incomplete
-        (x * 3 / 4) as usize
+    let alm = sysconf(SysconfVar::AIO_LISTIO_MAX).expect("sysconf").unwrap();
+    let maqpp = if let CtlValue::Int(x) = sysctl::value(
+            "vfs.aio.max_aio_queue_per_proc").unwrap(){
+        x
     } else {
-        panic!("sysctl: {:?}", limit);
+        panic!("unknown sysctl");
     };
+    // Find lio_listio sizes that satisfy the AIO_LISTIO_MAX constraint and also
+    // result in a final lio_listio call that can only partially be queued
+    let mut ops_per_listio = 0;
+    let mut num_listios = 0;
+    for i in (1..alm).rev() {
+        let _ops_per_listio = f64::from(i as u32);
+        let _num_listios = (f64::from(maqpp) / _ops_per_listio).ceil();
+        let delayed = _ops_per_listio * _num_listios - f64::from(maqpp);
+        if delayed > 0.01 {
+            ops_per_listio = i as usize;
+            num_listios = _num_listios as usize;
+            break
+        }
+    }
+    if num_listios == 0 {
+        panic!("Can't find a configuration for max_aio_queue_per_proc={} AIO_LISTIO_MAX={}");
+    }
 
     let dir = t!(TempDir::new("tokio-file"));
-    let path0 = dir.path().join("writev_at_eio.0");
-    let file0 = t!(File::open(&path0, Handle::current()));
-    let path1 = dir.path().join("writev_at_eio.1");
-    let file1 = t!(File::open(&path1, Handle::current()));
+    let path = dir.path().join("writev_at_eio");
+    let file = t!(File::open(&path, Handle::current()));
+    let dbses: Vec<_> = (0..num_listios).map(|_| {
+        (0..ops_per_listio).map(|_| {
+            DivBufShared::from(vec![0u8; 4096])
+        }).collect::<Vec<_>>()
+    }).collect();
+    let futs: Vec<_> = (0..num_listios).map(|i| {
+        let mut wbufs: Vec<Box<Borrow<[u8]>>> = Vec::with_capacity(ops_per_listio);
+        for j in 0..ops_per_listio {
+            let wbuf = dbses[i][j].try().unwrap();
+            wbufs.push(Box::new(wbuf));
+        }
+        file.writev_at(wbufs, 4096 * (i * ops_per_listio) as off_t)
+            .ok()
+            .expect("writev_at failed early")
+    }).collect();
 
-    let mut wbufs0: Vec<Box<Borrow<[u8]>>> = Vec::with_capacity(count);
-    let dbses0: Vec<_> = (0..count).map(|_| DivBufShared::from(vec![0u8; 4096])).collect();
-    let mut wbufs1: Vec<Box<Borrow<[u8]>>> = Vec::with_capacity(count);
-    let dbses1: Vec<_> = (0..count).map(|_| DivBufShared::from(vec![0u8; 4096])).collect();
-    for i in 0..count {
-        let wbuf0 = dbses0[i].try().unwrap();
-        wbufs0.push(Box::new(wbuf0));
-        let wbuf1 = dbses1[i].try().unwrap();
-        wbufs1.push(Box::new(wbuf1));
-    }
-
-    let mut wi = t!(current_thread::block_on_all(lazy(|| {
-        let fut0 = file0.writev_at(wbufs0, 0).ok().expect("writev_at failed early");
-        let fut1 = file1.writev_at(wbufs1, 0).ok().expect("writev_at failed early");
-        fut0.join(fut1)
+    let wi = t!(current_thread::block_on_all(future::lazy(|| {
+        future::join_all(futs)
     })));
 
-    for _ in 0..count {
-        let result = wi.0.next().unwrap();
-        assert_eq!(result.value.unwrap() as usize, 4096);
+    for lio_result in wi {
+        for aio_result in lio_result {
+            assert_eq!(aio_result.value.unwrap() as usize, 4096);
+        }
     }
-    assert!(wi.0.next().is_none());
-    for _ in 0..count {
-        let result = wi.1.next().unwrap();
-        assert_eq!(result.value.unwrap() as usize, 4096);
-    }
-    assert!(wi.1.next().is_none());
 }
-
-
