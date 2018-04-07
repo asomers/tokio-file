@@ -11,15 +11,28 @@ Asynchronous file I/O for Tokio
 categories = ["asynchronous", "filesystem"]
 
 [dependencies]
-divbuf = "0.1"
 futures = "0.1.10"
 libc = "0.2"
 mio = "0.6.13"
-nix = "0.10.0"
-mio-aio = { git = "git://github.com/asomers/mio-aio.git", rev = "326a19b" }
-tokio = { git = "git://github.com/tokio-rs/tokio.git", rev = "1190176" }
+nix = { git = "https://github.com/nix-rust/nix", rev = "31e901b" }
+mio-aio = { git = "https://github.com/asomers/mio-aio.git", rev = "8bfa2c9" }
+tokio = "0.1.4"
 
 [dev-dependencies]
+divbuf = { git = "https://github.com/asomers/divbuf", rev = "70104b4" }
 futures = "0.1"
 getopts = "0.2"
+sysctl = "0.1"
 tempdir = "0.3"
+
+[[test]]
+name = "functional"
+path = "tests/file.rs"
+
+[[test]]
+name = "lio_listio_incomplete"
+path = "tests/lio_listio_incomplete.rs"
+
+[[test]]
+name = "aio_write_eagain"
+path = "tests/aio_write_eagain.rs"

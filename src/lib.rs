@@ -1,6 +1,5 @@
 //! Tokio module for file I/O
 
-extern crate divbuf;
 extern crate futures;
 extern crate libc;
 extern crate mio;
@@ -10,4 +9,4 @@ extern crate tokio;
 
 mod file;
 
-pub use file::{AioFut, BufRef, File, WriteAtable};
+pub use file::{AioFut, AioResult, BufRef, File, LioFut};
