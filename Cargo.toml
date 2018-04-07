@@ -14,8 +14,8 @@ categories = ["asynchronous", "filesystem"]
 futures = "0.1.10"
 libc = "0.2"
 mio = "0.6.13"
-nix = { git = "https://github.com/asomers/nix", rev = "fef70ad" }
-mio-aio = { git = "git://github.com/asomers/mio-aio.git", rev = "655118c" }
+nix = { git = "https://github.com/nix-rust/nix", rev = "31e901b" }
+mio-aio = { git = "https://github.com/asomers/mio-aio.git", rev = "8bfa2c9" }
 tokio = "0.1.4"
 
 [dev-dependencies]
