@@ -35,8 +35,8 @@ fn metadata() {
 
 #[test]
 fn read_at() {
-    const WBUF: &'static [u8] = b"abcdef";
-    const EXPECT: &'static [u8] = b"cdef";
+    const WBUF: &[u8] = b"abcdef";
+    const EXPECT: &[u8] = b"cdef";
     let dbs = DivBufShared::from(vec![0; 4]);
     let rbuf = Box::new(dbs.try_mut().unwrap());
     let off = 2;
@@ -59,9 +59,9 @@ fn read_at() {
 
 #[test]
 fn readv_at() {
-    const WBUF: &'static [u8] = b"abcdefghijklmnopqrwtuvwxyz";
-    const EXPECT0: &'static [u8] = b"cdef";
-    const EXPECT1: &'static [u8] = b"ghijklmn";
+    const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
+    const EXPECT0: &[u8] = b"cdef";
+    const EXPECT1: &[u8] = b"ghijklmn";
     let dbs0 = DivBufShared::from(vec![0; 4]);
     let rbuf0 = Box::new(dbs0.try_mut().unwrap());
     let dbs1 = DivBufShared::from(vec![0; 8]);
@@ -93,7 +93,7 @@ fn readv_at() {
 
 #[test]
 fn sync_all() {
-    const WBUF: &'static [u8] = b"abcdef";
+    const WBUF: &[u8] = b"abcdef";
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("sync_all");
@@ -128,7 +128,7 @@ fn write_at() {
 
 #[test]
 fn writev_at() {
-    const EXPECT: &'static [u8] = b"abcdefghij";
+    const EXPECT: &[u8] = b"abcdefghij";
     let dbs0 = DivBufShared::from(&b"abcdef"[..]);
     let wbuf0 = Box::new(dbs0.try().unwrap());
     let dbs1 = DivBufShared::from(&b"ghij"[..]);
@@ -163,7 +163,7 @@ fn writev_at() {
 
 #[test]
 fn write_at_static() {
-    const WBUF: &'static [u8] = b"abcdef";
+    const WBUF: &[u8] = b"abcdef";
     let wbuf = Box::new(WBUF);
     let mut rbuf = Vec::new();
 
@@ -185,9 +185,9 @@ fn write_at_static() {
 
 #[test]
 fn writev_at_static() {
-    const EXPECT: &'static [u8] = b"abcdefghi";
-    const WBUF0: &'static [u8] = b"abcdef";
-    const WBUF1: &'static [u8] = b"ghi";
+    const EXPECT: &[u8] = b"abcdefghi";
+    const WBUF0: &[u8] = b"abcdef";
+    const WBUF1: &[u8] = b"ghi";
     let wbuf0 = Box::new(WBUF0);
     let wbuf1 = Box::new(WBUF1);
     let wbufs : Vec<Box<Borrow<[u8]>>> = vec![wbuf0, wbuf1];
