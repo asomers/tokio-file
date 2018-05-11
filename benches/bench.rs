@@ -1,23 +1,25 @@
 #![feature(test)]
 
+extern crate divbuf;
 extern crate futures;
 extern crate tempdir;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_file;
 extern crate test;
 
+use divbuf::DivBufShared;
 use futures::sync::oneshot;
 use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::FileExt;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::vec;
 use tempdir::TempDir;
 use test::Bencher;
-use tokio_core::reactor::Core;
+use tokio::reactor::Handle;
+use tokio::runtime::current_thread::Runtime;
 use tokio_file::File;
 
 const FLEN: usize = 4096;
@@ -29,16 +31,20 @@ fn bench_aio_read(bench: &mut Bencher) {
     let path = dir.path().join("aio_read");
     let mut f = fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
-    let rbuf = Rc::new(vec![0; FLEN].into_boxed_slice());
+    let dbs = DivBufShared::from(vec![0; FLEN]);
     f.write(&wbuf).expect("write failed");
 
     // Prep the reactor
-    let mut l = Core::new().unwrap();
-    let file = File::open(path, l.handle().clone()).unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let file = File::open(path, Handle::current()).unwrap();
 
     bench.iter(move || {
-        let fut = file.read_at(rbuf.clone(), 0).ok().expect("read_at failed early");
-        assert_eq!(l.run(fut).unwrap() as usize, wbuf.len());
+        let rbuf = Box::new(dbs.try_mut().unwrap());
+        let fut = file.read_at(rbuf, 0).ok().expect("read_at failed early");
+        let len = runtime.block_on(fut)
+                         .unwrap()
+                         .value.unwrap();
+        assert_eq!(len as usize, wbuf.len());
     })
 }
 
@@ -55,7 +61,7 @@ fn bench_threaded_read(bench: &mut Bencher) {
     f.write(&wbuf).expect("write failed");
 
     // Prep the reactor
-    let mut l = Core::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let pathclone = path.clone();
     let file = Arc::new(Mutex::new(fs::File::open(&pathclone).unwrap()));
 
@@ -65,10 +71,14 @@ fn bench_threaded_read(bench: &mut Bencher) {
         let fclone = file.clone();
         thread::spawn(move || {
             let mut d = rclone.lock().unwrap();
-            let len = fclone.lock().unwrap().read_at(&mut d, 0).expect("read failed");
+            let len = fclone.lock()
+                            .unwrap()
+                            .read_at(&mut d, 0)
+                            .expect("read failed");
             tx.send(len).expect("sending failed");
         });
-        assert_eq!(l.run(rx).expect("receiving failed") as usize, FLEN);
+        let len = runtime.block_on(rx).expect("receiving failed");
+        assert_eq!(len as usize, FLEN);
     });
 }
     
@@ -108,7 +118,7 @@ fn bench_threadpool_read(bench: &mut Bencher) {
     });
 
     // Prep the reactor
-    let mut l = Core::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let pathclone = path.clone();
     let file = Arc::new(Mutex::new(fs::File::open(&pathclone).unwrap()));
     let ptxclone = ptx.clone();
@@ -123,7 +133,8 @@ fn bench_threadpool_read(bench: &mut Bencher) {
             tx: tx};
         ptxclone.send(Some(opspec)).unwrap();
 
-        assert_eq!(l.run(rx).expect("receiving failed") as usize, FLEN);
+        let len = runtime.block_on(rx).expect("receiving failed");
+        assert_eq!(len as usize, FLEN);
     });
     ptx.send(None).unwrap();
 }

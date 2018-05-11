@@ -106,14 +106,22 @@ impl Future for LioFut {
                     return Err(nix::Error::Sys(nix::errno::Errno::EIO)),
             }
         }
-        let poll_result = self.op.as_mut().unwrap().poll_read_ready(UnixReady::lio().into()).unwrap();
+        let poll_result = self.op
+                              .as_mut()
+                              .unwrap()
+                              .poll_read_ready(UnixReady::lio().into())
+                              .unwrap();
         if poll_result == Async::NotReady {
             return Ok(Async::NotReady);
         }
         if let AioState::Incomplete = self.state {
             // Some requests must've completed; now issue the rest.
             let result = self.op.as_mut().unwrap().get_mut().resubmit();
-            self.op.as_mut().unwrap().clear_read_ready(UnixReady::lio().into()).unwrap();
+            self.op
+                .as_mut()
+                .unwrap()
+                .clear_read_ready(UnixReady::lio().into())
+                .unwrap();
             match result {
                 Ok(()) => {
                     self.state = AioState::InProgress;
@@ -184,7 +192,8 @@ impl File {
                             0,  //priority
                             aio::LioOpcode::LIO_NOP);
         Ok(AioFut{
-            op: AioOp::Read(try!(PollEvented2::new_with_handle(aiocb, &self.handle))),
+            op: AioOp::Read(PollEvented2::new_with_handle(aiocb,
+                                                          &self.handle)?),
             state: AioState::Allocated })
     }
 
@@ -227,7 +236,7 @@ impl File {
             offs += buflen as off_t;
         };
         Ok(LioFut{
-            op: Some(try!(PollEvented2::new_with_handle(liocb, &self.handle))),
+            op: Some(PollEvented2::new_with_handle(liocb, &self.handle)?),
             state: AioState::Allocated })
     }
 
@@ -238,7 +247,8 @@ impl File {
         let aiocb = mio_aio::AioCb::from_boxed_slice(fd, offset, buf, 0,
                                                      aio::LioOpcode::LIO_NOP);
         Ok(AioFut{
-            op: AioOp::Write(try!(PollEvented2::new_with_handle(aiocb, &self.handle))),
+            op: AioOp::Write(PollEvented2::new_with_handle(aiocb,
+                                                           &self.handle)?),
             state: AioState::Allocated })
     }
 
@@ -260,7 +270,7 @@ impl File {
         };
 
         Ok(LioFut{
-            op: Some(try!(PollEvented2::new_with_handle(liocb, &self.handle))),
+            op: Some(PollEvented2::new_with_handle(liocb, &self.handle)?),
             state: AioState::Allocated })
     }
 
@@ -271,7 +281,8 @@ impl File {
                             0,  //priority
                             );
         Ok(AioFut{
-            op: AioOp::Fsync(try!(PollEvented2::new_with_handle(aiocb, &self.handle))),
+            op: AioOp::Fsync(PollEvented2::new_with_handle(aiocb,
+                                                           &self.handle)?),
             state: AioState::Allocated })
     }
 }
