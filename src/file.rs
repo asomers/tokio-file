@@ -3,7 +3,6 @@
 //! This module provides methods for asynchronous file I/O.  On BSD-based
 //! operating systems, it uses mio-aio.  On Linux, it can use libaio.
 
-use libc::{off_t};
 use futures::{Async, Future, Poll};
 use mio::unix::UnixReady;
 use mio_aio;
@@ -185,7 +184,7 @@ impl File {
 
     /// Asynchronous equivalent of `std::fs::File::read_at`
     pub fn read_at(&self, buf: Box<BorrowMut<[u8]>>,
-                   offset: off_t) -> io::Result<AioFut> {
+                   offset: u64) -> io::Result<AioFut> {
         let aiocb = mio_aio::AioCb::from_boxed_mut_slice(self.file.as_raw_fd(),
                             offset,  //offset
                             buf,
@@ -222,7 +221,7 @@ impl File {
     /// `Err(x)`:   An error occurred before issueing the operation.  The result
     ///             may be `drop`ped.
     pub fn readv_at(&self, mut bufs: Vec<Box<BorrowMut<[u8]>>>,
-                    offset: off_t) -> io::Result<LioFut> {
+                    offset: u64) -> io::Result<LioFut> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
         for mut buf in bufs.drain(..) {
@@ -233,7 +232,7 @@ impl File {
             };
             liocb.emplace_boxed_mut_slice(self.file.as_raw_fd(), offs, buf,
                                       0, mio_aio::LioOpcode::LIO_READ);
-            offs += buflen as off_t;
+            offs += buflen as u64;
         };
         Ok(LioFut{
             op: Some(PollEvented2::new_with_handle(liocb, &self.handle)?),
@@ -242,7 +241,7 @@ impl File {
 
     /// Asynchronous equivalent of `std::fs::File::write_at`
     pub fn write_at(&self, buf: Box<Borrow<[u8]>>,
-                    offset: off_t) -> io::Result<AioFut> {
+                    offset: u64) -> io::Result<AioFut> {
         let fd = self.file.as_raw_fd();
         let aiocb = mio_aio::AioCb::from_boxed_slice(fd, offset, buf, 0,
                                                      aio::LioOpcode::LIO_NOP);
@@ -254,7 +253,7 @@ impl File {
 
     /// Asynchronous equivalent of `pwritev`
     pub fn writev_at(&self, mut bufs: Vec<Box<Borrow<[u8]>>>,
-                     offset: off_t) -> io::Result<LioFut> {
+                     offset: u64) -> io::Result<LioFut> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
         let fd = self.file.as_raw_fd();
@@ -266,7 +265,7 @@ impl File {
             };
             liocb.emplace_boxed_slice(fd, offs, buf, 0,
                                       mio_aio::LioOpcode::LIO_WRITE);
-            offs += buflen as off_t;
+            offs += buflen as u64;
         };
 
         Ok(LioFut{

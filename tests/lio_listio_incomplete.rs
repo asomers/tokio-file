@@ -1,6 +1,5 @@
 extern crate divbuf;
 extern crate futures;
-extern crate libc;
 extern crate nix;
 extern crate sysctl;
 extern crate tempdir;
@@ -9,7 +8,6 @@ extern crate tokio_file;
 
 use divbuf::DivBufShared;
 use futures::future;
-use libc::off_t;
 use nix::unistd::{SysconfVar, sysconf};
 use std::borrow::Borrow;
 use sysctl::CtlValue;
@@ -70,7 +68,7 @@ fn writev_at_eio() {
             let wbuf = dbses[i][j].try().unwrap();
             wbufs.push(Box::new(wbuf));
         }
-        file.writev_at(wbufs, 4096 * (i * ops_per_listio) as off_t)
+        file.writev_at(wbufs, 4096 * (i * ops_per_listio) as u64)
             .ok()
             .expect("writev_at failed early")
     }).collect();

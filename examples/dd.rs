@@ -10,7 +10,6 @@
 extern crate divbuf;
 extern crate futures;
 extern crate getopts;
-extern crate libc;
 extern crate tokio;
 extern crate tokio_file;
 
@@ -19,7 +18,6 @@ use futures::future::{Future, ok};
 use futures::future::lazy;
 use futures::{Stream, stream};
 use getopts::Options;
-use libc::{off_t};
 use std::env;
 use std::cell::Cell;
 use std::mem;
@@ -34,7 +32,7 @@ struct Dd {
     pub count: usize,
     pub infile: File,
     pub outfile: File,
-    pub ofs: Cell<off_t>,
+    pub ofs: Cell<u64>,
 }
 
 impl Dd {
@@ -90,7 +88,7 @@ fn main() {
         let stream = stream::iter_ok(0..dd.count);
         stream.for_each(|blocknum| {
             let rbuf = Box::new(dbs.try_mut().unwrap());
-            let ofs = (dd.bs * blocknum) as off_t;
+            let ofs = (dd.bs * blocknum) as u64;
             dd.infile.read_at(rbuf, ofs)
             .unwrap()
             .and_then(|r| {
@@ -99,7 +97,7 @@ fn main() {
                 dd.outfile.write_at(wbuf, dd.ofs.get())
                 .unwrap()
                 .and_then(|r| {
-                    dd.ofs.set(dd.ofs.get() + r.value.unwrap() as off_t);
+                    dd.ofs.set(dd.ofs.get() + r.value.unwrap() as u64);
                     ok(())
                 })
             })

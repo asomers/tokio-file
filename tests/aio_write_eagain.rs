@@ -1,6 +1,5 @@
 extern crate divbuf;
 extern crate futures;
-extern crate libc;
 extern crate nix;
 extern crate sysctl;
 extern crate tempdir;
@@ -10,7 +9,6 @@ extern crate tokio_file;
 use divbuf::DivBufShared;
 use futures::future::lazy;
 use futures::{Future, future};
-use libc::{off_t};
 use tempdir::TempDir;
 use tokio_file::{AioResult, File};
 use tokio::executor::current_thread;
@@ -43,7 +41,7 @@ fn write_at_eagain() {
     }).collect();
     let futs : Vec<_> = (0..count).map(|i| {
         let wbuf = Box::new(dbses[i].try().unwrap());
-        file.write_at(wbuf, 4096 * i as off_t).unwrap()
+        file.write_at(wbuf, 4096 * i as u64).unwrap()
             //future::join_all annoyingly cancels all remaining futures after
             //the first error, so we have to pack both the real ok and real
             //error types into a single "fake ok" type.
