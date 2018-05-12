@@ -7,22 +7,20 @@ extern crate tokio;
 extern crate tokio_file;
 extern crate test;
 
-use divbuf::DivBufShared;
+use divbuf::{DivBufMut, DivBufShared};
 use futures::sync::oneshot;
-use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::FileExt;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::vec;
 use tempdir::TempDir;
 use test::Bencher;
 use tokio::reactor::Handle;
 use tokio::runtime::current_thread::Runtime;
 use tokio_file::File;
 
-const FLEN: usize = 4096;
+const FLEN: usize = 1<<19;
 
 #[bench]
 fn bench_aio_read(bench: &mut Bencher) {
@@ -57,7 +55,7 @@ fn bench_threaded_read(bench: &mut Bencher) {
     let path = dir.path().join("threaded_read");
     let mut f = fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
-    let rbuf = Arc::new(Mutex::new(vec![0; FLEN]));
+    let dbs = DivBufShared::from(vec![0; FLEN]);
     f.write(&wbuf).expect("write failed");
 
     // Prep the reactor
@@ -67,13 +65,12 @@ fn bench_threaded_read(bench: &mut Bencher) {
 
     bench.iter(move || {
         let (tx, rx) = oneshot::channel::<usize>();
-        let rclone = rbuf.clone();
+        let mut rbuf = dbs.try_mut().unwrap();
         let fclone = file.clone();
         thread::spawn(move || {
-            let mut d = rclone.lock().unwrap();
             let len = fclone.lock()
                             .unwrap()
-                            .read_at(&mut d, 0)
+                            .read_at(&mut rbuf[..], 0)
                             .expect("read failed");
             tx.send(len).expect("sending failed");
         });
@@ -84,7 +81,7 @@ fn bench_threaded_read(bench: &mut Bencher) {
     
 struct TpOpspec {
     f:  Arc<Mutex<fs::File>>,
-    buf: RefCell<vec::Vec<u8>>,
+    buf: DivBufMut,
     offset: u64,
     tx: oneshot::Sender<usize>
 }
@@ -106,10 +103,10 @@ fn bench_threadpool_read(bench: &mut Bencher) {
     thread::spawn(move || {
         loop {
             let v: Option<TpOpspec> = prx.recv().unwrap();
-            if let Some(op) = v {
-                let mut buf = op.buf.borrow_mut();
+            if let Some(mut op) = v {
                 let f = op.f.lock().unwrap();
-                let len: usize = f.read_at(&mut buf, op.offset).unwrap();
+                let sl = &mut op.buf[..];
+                let len: usize = f.read_at(sl, op.offset).unwrap();
                 op.tx.send(len).expect("send failed");
             } else {
                 break;
@@ -124,11 +121,11 @@ fn bench_threadpool_read(bench: &mut Bencher) {
     let ptxclone = ptx.clone();
 
     bench.iter(move || {
-        let rbuf = vec![0; FLEN];
+        let dbs = DivBufShared::from(vec![0; FLEN]);
         let (tx, rx) = oneshot::channel::<usize>();
         let opspec = TpOpspec{
             f: file.clone(),
-            buf: RefCell::new(rbuf),
+            buf: dbs.try_mut().unwrap(),
             offset: 0,
             tx: tx};
         ptxclone.send(Some(opspec)).unwrap();

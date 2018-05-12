@@ -18,7 +18,7 @@ mio-aio = { git = "https://github.com/asomers/mio-aio.git", rev = "f074091" }
 tokio = "0.1.5"
 
 [dev-dependencies]
-divbuf = { git = "https://github.com/asomers/divbuf", rev = "70104b4" }
+divbuf = { git = "https://github.com/asomers/divbuf", rev = "6a52cca" }
 futures = "0.1"
 getopts = "0.2"
 sysctl = "0.1"
