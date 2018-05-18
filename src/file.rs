@@ -15,13 +15,16 @@ use std::borrow::{Borrow, BorrowMut};
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 
+// LCOV_EXCL_START
 #[derive(Debug)]
 enum AioOp {
     Fsync(PollEvented2<mio_aio::AioCb<'static>>),
     Read(PollEvented2<mio_aio::AioCb<'static>>),
     Write(PollEvented2<mio_aio::AioCb<'static>>),
 }
+// LCOV_EXCL_STOP
 
+// LCOV_EXCL_START
 /// Represents the progress of a single AIO operation
 #[derive(Debug)]
 enum AioState {
@@ -34,7 +37,9 @@ enum AioState {
     /// in-progress, but some are not due to resource limitations.
     Incomplete,
 }
+// LCOV_EXCL_STOP
 
+// LCOV_EXCL_START
 /// A Future representing an AIO operation.
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
@@ -42,6 +47,7 @@ pub struct AioFut {
     op: AioOp,
     state: AioState,
 }
+// LCOV_EXCL_STOP
 
 impl AioFut {
     // Used internally by `futures::Future::poll`.  Should not be called by the
@@ -78,12 +84,14 @@ impl AioResult {
 }
 
 /// A Future representing an LIO operation.
+// LCOV_EXCL_START
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
 pub struct LioFut {
     op: Option<PollEvented2<mio_aio::LioCb>>,
     state: AioState,
 }
+// LCOV_EXCL_STOP
 
 impl Future for LioFut {
     type Item = Box<Iterator<Item = AioResult>>;
@@ -152,11 +160,13 @@ impl Future for LioFut {
 }
 
 /// Basically a Tokio file handle
+// LCOV_EXCL_START
 #[derive(Debug)]
 pub struct File {
     file: fs::File,
     handle: Handle
 }
+// LCOV_EXCL_STOP
 
 impl File {
     /// Get metadata from the underlying file
