@@ -27,7 +27,7 @@ macro_rules! t {
 fn write_at_eagain() {
     let limit = sysctl::value("vfs.aio.max_aio_queue_per_proc").unwrap();
     let count = if let sysctl::CtlValue::Int(x) = limit {
-        (x + 1) as usize
+        (2 * x) as usize
     } else {
         panic!("sysctl: {:?}", limit);
     };
@@ -57,9 +57,22 @@ fn write_at_eagain() {
         future::join_all(futs)
     })));
 
-    for i in 0..count-1 {
-        assert_eq!(wi[i].as_ref().unwrap().value.unwrap() as usize, 4096);
+    let mut n_ok = 0;
+    let mut n_eagain = 0;
+    for i in 0..count {
+        match wi[i].as_ref() {
+            Ok(aio_result) => {
+                n_ok += 1;
+                assert_eq!(aio_result.value.unwrap(), 4096);
+            },
+            Err(nix::Error::Sys(nix::errno::Errno::EAGAIN)) => n_eagain += 1,
+            Err(e) => panic!("unexpected result {:?}", e)
+        }
     }
-    assert_eq!(wi[count - 1].as_ref().err().unwrap(),
-               &nix::Error::Sys(nix::errno::Errno::EAGAIN));
+    // We should've been able to submit at least count / 2 operations.  But if
+    // the test ran slowly and/or the storage system is fast, then we might've
+    // been able to submit more.  If there wasn't a single EAGAIN, then the
+    // testcase needs some work.
+    assert!(n_ok >= count / 2);
+    assert!(n_eagain > 1);
 }
