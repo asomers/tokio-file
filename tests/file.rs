@@ -51,9 +51,10 @@ fn read_at() {
     })));
     assert_eq!(r.value.unwrap() as usize, EXPECT.len());
 
-    let borrowed : &mut BorrowMut<[u8]> = r.buf.boxed_mut_slice()
-                                               .unwrap()
-                                               .borrow_mut();
+    let mut buf_ref = r.into_buf_ref();
+    let borrowed : &mut BorrowMut<[u8]> = buf_ref.boxed_mut_slice()
+                                                 .unwrap()
+                                                 .borrow_mut();
     assert_eq!(&borrowed.borrow_mut()[..], &EXPECT[..]);
 }
 
