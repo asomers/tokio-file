@@ -4,7 +4,7 @@
 //! You can try it out by running:
 //!
 //!     dd if=/dev/urandom of=/tmp/infile bs=4096 count=100
-//!     cargo run --example dd -b 4096 -c 100 /tmp/infile /tmp/outfile
+//!     cargo run --example dd -- -b 4096 -c 100 /tmp/infile /tmp/outfile
 //!     cmp /tmp/infile /tmp/outfile
 
 extern crate divbuf;
