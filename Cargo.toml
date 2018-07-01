@@ -13,12 +13,12 @@ categories = ["asynchronous", "filesystem"]
 [dependencies]
 futures = "0.1.10"
 mio = "0.6.13"
-nix = { git = "https://github.com/nix-rust/nix", rev = "31e901b" }
-mio-aio = { git = "https://github.com/asomers/mio-aio.git", rev = "f074091" }
+nix = "0.11.0"
+mio-aio = "0.3.0"
 tokio = "0.1.5"
 
 [dev-dependencies]
-divbuf = { git = "https://github.com/asomers/divbuf", rev = "6a52cca" }
+divbuf = "0.2.0"
 futures = "0.1"
 getopts = "0.2"
 sysctl = "0.1"
