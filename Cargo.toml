@@ -9,6 +9,7 @@ description = """
 Asynchronous file I/O for Tokio
 """
 categories = ["asynchronous", "filesystem"]
+documentation = "https://asomers.github.io/tokio-file/tokio_file/"
 
 [dependencies]
 futures = "0.1.10"
