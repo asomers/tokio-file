@@ -1,4 +1,4 @@
-## [Unreleased] - ReleaseDate
+## [0.3.0] - 2018-07-01
 ### Added
 - Added `File::readv_at` and `File::writev_at`
 - Added `File::metadata`
