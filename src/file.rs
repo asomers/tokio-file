@@ -7,7 +7,6 @@ use futures::{Async, Future, Poll};
 use mio::unix::UnixReady;
 use mio_aio;
 pub use mio_aio::{BufRef, LioError};
-use nix::sys::aio;
 use nix;
 use tokio::reactor::{Handle, PollEvented2};
 use std::{fs, io, mem};
@@ -199,7 +198,7 @@ impl File {
                             offset,  //offset
                             buf,
                             0,  //priority
-                            aio::LioOpcode::LIO_NOP);
+                            mio_aio::LioOpcode::LIO_NOP);
         Ok(AioFut{
             op: AioOp::Read(PollEvented2::new_with_handle(aiocb,
                                                           &self.handle)?),
@@ -254,7 +253,7 @@ impl File {
                     offset: u64) -> io::Result<AioFut> {
         let fd = self.file.as_raw_fd();
         let aiocb = mio_aio::AioCb::from_boxed_slice(fd, offset, buf, 0,
-                                                     aio::LioOpcode::LIO_NOP);
+            mio_aio::LioOpcode::LIO_NOP);
         Ok(AioFut{
             op: AioOp::Write(PollEvented2::new_with_handle(aiocb,
                                                            &self.handle)?),
@@ -304,7 +303,7 @@ impl Future for AioFut {
         if let AioState::Allocated = self.state {
             let r = match self.op {
                 AioOp::Fsync(ref pe) => pe.get_ref()
-                    .fsync(aio::AioFsyncMode::O_SYNC),
+                    .fsync(mio_aio::AioFsyncMode::O_SYNC),
                 AioOp::Read(ref pe) => pe.get_ref().read(),
                 AioOp::Write(ref pe) => pe.get_ref().write(),
             };
