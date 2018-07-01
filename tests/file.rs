@@ -46,7 +46,7 @@ fn read_at() {
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
     let file = t!(File::open(&path, Handle::current()));
-    let mut r = t!(current_thread::block_on_all(lazy(|| {
+    let r = t!(current_thread::block_on_all(lazy(|| {
         file.read_at(rbuf, off).expect("read_at failed early")
     })));
     assert_eq!(r.value.unwrap() as usize, EXPECT.len());
