@@ -175,7 +175,27 @@ impl File {
         self.file.metadata()
     }
 
-    /// Open a new Tokio file
+    /// Create a new Tokio File from an ordinary `std::fs::File` object
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::fs;
+    /// use tokio_file;
+    ///
+    /// fs::OpenOptions::new()
+    ///     .read(true)
+    ///     .write(true)
+    ///     .create(true)
+    ///     .open("foo")
+    ///     .map(tokio_file::File::new)
+    ///     .unwrap();
+    /// ```
+    pub fn new(file: fs::File) -> File {
+        File{file}
+    }
+
+    /// Open a new Tokio file with mode `O_RDWR | O_CREAT`.
     // Technically, sfd::fs::File::open can block, so we should make a
     // nonblocking File::open method and have it return a Future.  That's what
     // Seastar does.  But POSIX AIO doesn't have any kind of asynchronous open

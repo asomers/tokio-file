@@ -32,6 +32,22 @@ fn metadata() {
     assert_eq!(9000, metadata.len());
 }
 
+/// Demonstrate use of `tokio_file::File::new` with user-controlled options.
+/// It should fail because the file doesn't already exist and `O_CREAT` is not
+/// specified.
+#[test]
+fn new_nocreat() {
+    let dir = t!(TempDir::new("tokio-file"));
+    let path = dir.path().join("nonexistent");
+    let r = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(false)
+        .open(&path)
+        .map(tokio_file::File::new);
+    assert!(r.is_err());
+}
+
 #[test]
 fn read_at() {
     const WBUF: &[u8] = b"abcdef";

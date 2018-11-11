@@ -1,5 +1,9 @@
 ## [Unreleased] - ReleaseDate
 
+### Added
+- `File::new` allows creating a tokio file object from an arbitrary
+  `std::fs::File`.
+
 ### Changed
 - `open` no longer takes a `Handle` argument.
 
