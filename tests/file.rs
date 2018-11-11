@@ -11,8 +11,7 @@ use std::fs;
 use std::io::{Read, Write};
 use tempdir::TempDir;
 use tokio_file::File;
-use tokio::executor::current_thread;
-use tokio::reactor::Handle;
+use tokio::runtime::current_thread;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -28,7 +27,7 @@ fn metadata() {
     let path = dir.path().join("read_at");
     let mut f = t!(fs::File::create(&path));
     f.write(&wbuf).expect("write failed");
-    let file = t!(File::open(&path, Handle::current()));
+    let file = t!(File::open(&path));
     let metadata = file.metadata().unwrap();
     assert_eq!(9000, metadata.len());
 }
@@ -45,8 +44,9 @@ fn read_at() {
     let path = dir.path().join("read_at_divbuf_mut");
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
-    let file = t!(File::open(&path, Handle::current()));
-    let r = t!(current_thread::block_on_all(lazy(|| {
+    let file = t!(File::open(&path));
+    let mut rt = current_thread::Runtime::new().unwrap();
+    let r = t!(rt.block_on(lazy(|| {
         file.read_at(rbuf, off).expect("read_at failed early")
     })));
     assert_eq!(r.value.unwrap() as usize, EXPECT.len());
@@ -74,8 +74,9 @@ fn readv_at() {
     let path = dir.path().join("readv_at");
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
-    let file = t!(File::open(&path, Handle::current()));
-    let mut ri = t!(current_thread::block_on_all(lazy(|| {
+    let file = t!(File::open(&path));
+    let mut rt = current_thread::Runtime::new().unwrap();
+    let mut ri = t!(rt.block_on(lazy(|| {
         file.readv_at(rbufs, off).ok().expect("read_at failed early")
     })));
 
@@ -100,8 +101,9 @@ fn sync_all() {
     let path = dir.path().join("sync_all");
     let mut f = t!(fs::File::create(&path));
     f.write(WBUF).expect("write failed");
-    let file = t!(File::open(&path, Handle::current()));
-    let r = t!(current_thread::block_on_all(lazy(|| {
+    let file = t!(File::open(&path));
+    let mut rt = current_thread::Runtime::new().unwrap();
+    let r = t!(rt.block_on(lazy(|| {
         file.sync_all().ok().expect("sync_all failed early")
     })));
     assert!(r.value.is_none());
@@ -115,8 +117,9 @@ fn write_at() {
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("write_at");
-    let file = t!(File::open(&path, Handle::current()));
-    let r = t!(current_thread::block_on_all(lazy(|| {
+    let file = t!(File::open(&path));
+    let mut rt = current_thread::Runtime::new().unwrap();
+    let r = t!(rt.block_on(lazy(|| {
         file.write_at(wbuf.clone(), 0).ok().expect("write_at failed early")
     })));
     assert_eq!(r.value.unwrap() as usize, wbuf.len());
@@ -139,8 +142,9 @@ fn writev_at() {
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("writev_at");
-    let file = t!(File::open(&path, Handle::current()));
-    let mut wi = t!(current_thread::block_on_all(lazy(|| {
+    let file = t!(File::open(&path));
+    let mut rt = current_thread::Runtime::new().unwrap();
+    let mut wi = t!(rt.block_on(lazy(|| {
         file.writev_at(wbufs, 0).ok().expect("writev_at failed early")
     })));
 
@@ -171,8 +175,9 @@ fn write_at_static() {
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("write_at");
     {
-        let file = t!(File::open(&path, Handle::current()));
-        let r = t!(current_thread::block_on_all(lazy(|| {
+        let file = t!(File::open(&path));
+        let mut rt = current_thread::Runtime::new().unwrap();
+        let r = t!(rt.block_on(lazy(|| {
             file.write_at(wbuf, 0).ok().expect("write_at failed early")
         })));
         assert_eq!(r.value.unwrap() as usize, WBUF.len());
@@ -196,8 +201,9 @@ fn writev_at_static() {
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("writev_at_static");
-    let file = t!(File::open(&path, Handle::current()));
-    let mut wi = t!(current_thread::block_on_all(lazy(|| {
+    let file = t!(File::open(&path));
+    let mut rt = current_thread::Runtime::new().unwrap();
+    let mut wi = t!(rt.block_on(lazy(|| {
         file.writev_at(wbufs, 0).ok().expect("writev_at failed early")
     })));
 

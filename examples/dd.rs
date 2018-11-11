@@ -23,8 +23,7 @@ use std::cell::Cell;
 use std::mem;
 use std::rc::Rc;
 use std::str::FromStr;
-use tokio::executor::current_thread;
-use tokio::reactor::Handle;
+use tokio::runtime::current_thread;
 use tokio_file::File;
 
 struct Dd {
@@ -36,9 +35,9 @@ struct Dd {
 }
 
 impl Dd {
-    pub fn new(infile: &str, outfile: &str, h: Handle, bs: usize, count: usize) -> Dd {
-        let inf = File::open(infile, h.clone());
-        let outf = File::open(outfile, h.clone());
+    pub fn new(infile: &str, outfile: &str, bs: usize, count: usize) -> Dd {
+        let inf = File::open(infile);
+        let outf = File::open(outfile);
         Dd {
             bs: bs,
             count: count,
@@ -78,10 +77,10 @@ fn main() {
     let infile = &matches.free[0];
     let outfile = &matches.free[1];
 
-    let dd = Dd::new(infile.as_str(), outfile.as_str(), Handle::current(), bs,
-                     count);
+    let dd = Dd::new(infile.as_str(), outfile.as_str(), bs, count);
     let dbs = Rc::new(DivBufShared::from(vec![0; bs]));
-    current_thread::block_on_all(lazy(|| {
+    let mut rt = current_thread::Runtime::new().unwrap();
+    rt.block_on(lazy(|| {
         // Note: this simple example will fail if infile isn't big enough.  A
         // robust program would use loop_fn instead of stream.for_each so it can
         // exit early.

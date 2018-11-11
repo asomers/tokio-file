@@ -1,3 +1,8 @@
+## [Unreleased] - ReleaseDate
+
+### Changed
+- `open` no longer takes a `Handle` argument.
+
 ## [0.3.0] - 2018-07-01
 ### Added
 - Added `File::readv_at` and `File::writev_at`

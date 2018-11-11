@@ -163,7 +163,6 @@ impl Future for LioFut {
 #[derive(Debug)]
 pub struct File {
     file: fs::File,
-    handle: Handle
 }
 // LCOV_EXCL_STOP
 
@@ -182,13 +181,13 @@ impl File {
     // Seastar does.  But POSIX AIO doesn't have any kind of asynchronous open
     // function, so there's no straightforward way to implement such a method.
     // Instead, we'll block.
-    pub fn open<P: AsRef<Path>>(path: P, h: Handle) -> io::Result<File> {
+    pub fn open<P: AsRef<Path>>(path: P) -> io::Result<File> {
         fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(path)
-            .map(|f| File {file: f, handle: h})
+            .map(|f| File {file: f})
     }
 
     /// Asynchronous equivalent of `std::fs::File::read_at`
@@ -199,9 +198,9 @@ impl File {
                             buf,
                             0,  //priority
                             mio_aio::LioOpcode::LIO_NOP);
+        let handle = Handle::current();
         Ok(AioFut{
-            op: AioOp::Read(PollEvented2::new_with_handle(aiocb,
-                                                          &self.handle)?),
+            op: AioOp::Read(PollEvented2::new_with_handle(aiocb, &handle)?),
             state: AioState::Allocated })
     }
 
@@ -243,8 +242,9 @@ impl File {
                                       0, mio_aio::LioOpcode::LIO_READ);
             offs += buflen as u64;
         };
+        let handle = Handle::current();
         Ok(LioFut{
-            op: Some(PollEvented2::new_with_handle(liocb, &self.handle)?),
+            op: Some(PollEvented2::new_with_handle(liocb, &handle)?),
             state: AioState::Allocated })
     }
 
@@ -254,9 +254,9 @@ impl File {
         let fd = self.file.as_raw_fd();
         let aiocb = mio_aio::AioCb::from_boxed_slice(fd, offset, buf, 0,
             mio_aio::LioOpcode::LIO_NOP);
+        let handle = Handle::current();
         Ok(AioFut{
-            op: AioOp::Write(PollEvented2::new_with_handle(aiocb,
-                                                           &self.handle)?),
+            op: AioOp::Write(PollEvented2::new_with_handle(aiocb, &handle)?),
             state: AioState::Allocated })
     }
 
@@ -276,9 +276,10 @@ impl File {
                                       mio_aio::LioOpcode::LIO_WRITE);
             offs += buflen as u64;
         };
+        let handle = Handle::current();
 
         Ok(LioFut{
-            op: Some(PollEvented2::new_with_handle(liocb, &self.handle)?),
+            op: Some(PollEvented2::new_with_handle(liocb, &handle)?),
             state: AioState::Allocated })
     }
 
@@ -288,9 +289,9 @@ impl File {
         let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
                             0,  //priority
                             );
+        let handle = Handle::current();
         Ok(AioFut{
-            op: AioOp::Fsync(PollEvented2::new_with_handle(aiocb,
-                                                           &self.handle)?),
+            op: AioOp::Fsync(PollEvented2::new_with_handle(aiocb, &handle)?),
             state: AioState::Allocated })
     }
 }

@@ -13,8 +13,7 @@ use std::borrow::Borrow;
 use sysctl::CtlValue;
 use tempdir::TempDir;
 use tokio_file::File;
-use tokio::executor::current_thread;
-use tokio::reactor::Handle;
+use tokio::runtime::current_thread;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -56,7 +55,7 @@ fn writev_at_eio() {
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("writev_at_eio");
-    let file = t!(File::open(&path, Handle::current()));
+    let file = t!(File::open(&path));
     let dbses: Vec<_> = (0..num_listios).map(|_| {
         (0..ops_per_listio).map(|_| {
             DivBufShared::from(vec![0u8; 4096])
@@ -73,7 +72,8 @@ fn writev_at_eio() {
             .expect("writev_at failed early")
     }).collect();
 
-    let wi = t!(current_thread::block_on_all(future::lazy(|| {
+    let mut rt = current_thread::Runtime::new().unwrap();
+    let wi = t!(rt.block_on(future::lazy(|| {
         future::join_all(futs)
     })));
 

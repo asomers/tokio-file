@@ -11,8 +11,7 @@ use futures::future::lazy;
 use futures::{Future, future};
 use tempdir::TempDir;
 use tokio_file::{AioResult, File};
-use tokio::executor::current_thread;
-use tokio::reactor::Handle;
+use tokio::runtime::current_thread;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -34,7 +33,7 @@ fn write_at_eagain() {
 
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("write_at_eagain.0");
-    let file = t!(File::open(&path, Handle::current()));
+    let file = t!(File::open(&path));
 
     let dbses: Vec<_> = (0..count).map(|_| {
         DivBufShared::from(vec![0u8; 4096])
@@ -53,7 +52,8 @@ fn write_at_eagain() {
             })
     }).collect();
 
-    let wi = t!(current_thread::block_on_all(lazy(|| {
+    let mut rt = current_thread::Runtime::new().unwrap();
+    let wi = t!(rt.block_on(lazy(|| {
         future::join_all(futs)
     })));
 

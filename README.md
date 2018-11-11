@@ -8,7 +8,7 @@ mixed with all other Future types within the Tokio reactor.
 ```toml
 # Cargo.toml
 [depdendencies]
-tokio = "0.1.5"
+tokio = "0.1.8"
 tokio-file = "0.3.0"
 ```
 
