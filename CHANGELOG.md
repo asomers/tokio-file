@@ -1,4 +1,4 @@
-## [Unreleased] - ReleaseDate
+## [0.4.0] - 2018-11-11
 
 ### Added
 - `File::new` allows creating a tokio file object from an arbitrary
