@@ -1,8 +1,4 @@
-//! Asynchronous File I/O module for Tokio
-//!
-//! This module provides methods for asynchronous file I/O.  On BSD-based
-//! operating systems, it uses mio-aio.  On Linux, it can use libaio.
-
+// vim: tw=80
 use futures::{Async, Future, Poll};
 use mio::unix::UnixReady;
 use mio_aio;
@@ -67,7 +63,7 @@ impl AioFut {
 /// Holds the result of an individual aio or lio operation
 pub struct AioResult {
     /// This is what the AIO operation would've returned, had it been
-    /// synchronous.  fsync operations return `()`, read and write operations
+    /// synchronous.  fsync operations return `None`, read and write operations
     /// return an `isize`
     pub value: Option<isize>,
 
@@ -158,7 +154,7 @@ impl Future for LioFut {
     }
 }
 
-/// Basically a Tokio file handle
+/// Basically a Tokio file handle.  This is the starting point for tokio-file.
 // LCOV_EXCL_START
 #[derive(Debug)]
 pub struct File {
@@ -211,6 +207,48 @@ impl File {
     }
 
     /// Asynchronous equivalent of `std::fs::File::read_at`
+    ///
+    /// Note that it consumes `buf` rather than references it.  When the
+    /// operation is complete, the buffer can be retrieved with
+    /// [`AioResult::into_buf_ref`](struct.AioResult.html#method.into_buf_ref).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # extern crate tempdir;
+    /// # extern crate tokio;
+    /// # extern crate tokio_file;
+    /// use std::borrow::BorrowMut;
+    /// use std::fs;
+    /// use std::io::Write;
+    /// use tempdir::TempDir;
+    /// use tokio::runtime::current_thread;
+    /// use tokio_file;
+    ///
+    /// const WBUF: &[u8] = b"abcdef";
+    /// const EXPECT: &[u8] = b"cdef";
+    /// let rbuf = Box::new(vec![0; 4].into_boxed_slice());
+    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let path = dir.path().join("foo");
+    /// let mut f = fs::File::create(&path).unwrap();
+    /// f.write(WBUF).unwrap();
+    ///
+    /// let file = fs::OpenOptions::new()
+    ///     .read(true)
+    ///     .open(&path)
+    ///     .map(tokio_file::File::new)
+    ///     .unwrap();
+    /// let mut rt = current_thread::Runtime::new().unwrap();
+    /// let r = rt.block_on(
+    ///     file.read_at(rbuf, 2).unwrap()
+    /// ).unwrap();
+    ///
+    /// let mut buf_ref = r.into_buf_ref();
+    /// let borrowed : &mut BorrowMut<[u8]> = buf_ref.boxed_mut_slice()
+    ///                                              .unwrap()
+    ///                                              .borrow_mut();
+    /// assert_eq!(&borrowed.borrow_mut()[..], &EXPECT[..]);
+    /// ```
     pub fn read_at(&self, buf: Box<BorrowMut<[u8]>>,
                    offset: u64) -> io::Result<AioFut> {
         let aiocb = mio_aio::AioCb::from_boxed_mut_slice(self.file.as_raw_fd(),
@@ -224,7 +262,7 @@ impl File {
             state: AioState::Allocated })
     }
 
-    /// Asynchronous equivalent of `preadv`
+    /// Asynchronous equivalent of `preadv`.
     ///
     /// Similar to
     /// [preadv(2)](https://www.freebsd.org/cgi/man.cgi?query=read&sektion=2)
@@ -241,13 +279,61 @@ impl File {
     ///
     /// # Returns
     ///
-    /// `Ok(x)`:    The operation was successfully issued.  The future
-    ///             will eventually return the final status of the operation.
-    ///             If the operation was partially successful, the future will
-    ///             return an error with no indication of which parts of `bufs`
-    ///             are valid.
-    /// `Err(x)`:   An error occurred before issueing the operation.  The result
+    /// - `Ok(x)`:  The operation was successfully created.  The future may be
+    ///             polled and will eventually return the final status of the
+    ///             operation.  If the operation was partially successful, the
+    ///             future will complete an error with no indication of which
+    ///             parts of `bufs` are valid.
+    /// - `Err(x)`: An error occurred before issueing the operation.  The result
     ///             may be `drop`ped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # extern crate tempdir;
+    /// # extern crate tokio;
+    /// # extern crate tokio_file;
+    /// use std::borrow::BorrowMut;
+    /// use std::fs;
+    /// use std::io::Write;
+    /// use tempdir::TempDir;
+    /// use tokio::runtime::current_thread;
+    /// use tokio_file;
+    ///
+    /// const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
+    /// const EXPECT0: &[u8] = b"cdef";
+    /// const EXPECT1: &[u8] = b"ghijklmn";
+    /// let rbuf0 = Box::new(vec![0; 4].into_boxed_slice());
+    /// let rbuf1 = Box::new(vec![0; 8].into_boxed_slice());
+    /// let rbufs : Vec<Box<BorrowMut<[u8]>>> = vec![rbuf0, rbuf1];
+    ///
+    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let path = dir.path().join("foo");
+    /// let mut f = fs::File::create(&path).unwrap();
+    /// f.write(WBUF).unwrap();
+    ///
+    /// let file = fs::OpenOptions::new()
+    ///     .read(true)
+    ///     .open(&path)
+    ///     .map(tokio_file::File::new)
+    ///     .unwrap();
+    /// let mut rt = current_thread::Runtime::new().unwrap();
+    /// let mut ri = rt.block_on(
+    ///     file.readv_at(rbufs, 2).unwrap()
+    /// ).unwrap();
+    ///
+    /// let mut r0 = ri.next().unwrap();
+    /// let b0 : &mut BorrowMut<[u8]> =
+    ///     r0.buf.boxed_mut_slice().unwrap().borrow_mut();
+    /// assert_eq!(&b0.borrow_mut()[..], &EXPECT0[..]);
+    ///
+    /// let mut r1 = ri.next().unwrap();
+    /// let b1 : &mut BorrowMut<[u8]> =
+    ///     r1.buf.boxed_mut_slice().unwrap().borrow_mut();
+    /// assert_eq!(&b1.borrow_mut()[..], &EXPECT1[..]);
+    ///
+    /// assert!(ri.next().is_none());
+    /// ```
     pub fn readv_at(&self, mut bufs: Vec<Box<BorrowMut<[u8]>>>,
                     offset: u64) -> io::Result<LioFut> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
@@ -268,7 +354,48 @@ impl File {
             state: AioState::Allocated })
     }
 
-    /// Asynchronous equivalent of `std::fs::File::write_at`
+    /// Asynchronous equivalent of `std::fs::File::write_at`.
+    ///
+    /// Note that it consumes `buf` rather than references it.  When the
+    /// operation is complete, the buffer can be retrieved with
+    /// [`AioResult::into_buf_ref`](struct.AioResult.html#method.into_buf_ref).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # extern crate tempdir;
+    /// # extern crate tokio;
+    /// # extern crate tokio_file;
+    /// use std::borrow::Borrow;
+    /// use std::fs;
+    /// use std::io::Read;
+    /// use tempdir::TempDir;
+    /// use tokio::runtime::current_thread;
+    /// use tokio_file;
+    ///
+    /// let contents = b"abcdef";
+    /// let wbuf: Box<Borrow<[u8]>> = Box::new(&contents[..]);
+    /// let mut rbuf = Vec::new();
+    ///
+    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let path = dir.path().join("foo");
+    /// let file = fs::OpenOptions::new()
+    ///     .create(true)
+    ///     .write(true)
+    ///     .open(&path)
+    ///     .map(tokio_file::File::new)
+    ///     .unwrap();
+    /// let mut rt = current_thread::Runtime::new().unwrap();
+    /// let r = rt.block_on(
+    ///     file.write_at(wbuf, 0).unwrap()
+    /// ).unwrap();
+    /// assert_eq!(r.value.unwrap() as usize, contents.len());
+    /// drop(file);
+    ///
+    /// let mut file = fs::File::open(&path).unwrap();
+    /// assert_eq!(file.read_to_end(&mut rbuf).unwrap(), contents.len());
+    /// assert_eq!(&contents[..], &rbuf[..]);
+    /// ```
     pub fn write_at(&self, buf: Box<Borrow<[u8]>>,
                     offset: u64) -> io::Result<AioFut> {
         let fd = self.file.as_raw_fd();
@@ -281,6 +408,70 @@ impl File {
     }
 
     /// Asynchronous equivalent of `pwritev`
+    ///
+    /// Similar to
+    /// [pwritev(2)](https://www.freebsd.org/cgi/man.cgi?query=write&sektion=2)
+    /// but asynchronous.  Writes a scatter-gather list of buffers into a
+    /// contiguous portion of a file.  Unlike `pwritev`, there is no guarantee
+    /// of overall atomicity.  Each scatter gather element's contents are
+    /// written independently.
+    ///
+    /// # Parameters
+    ///
+    /// - `bufs`:   The data to write.  A scatter-gather list of buffers.
+    /// - `offset`: Offset within the file at which to begin the write
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(x)`:  The operation was successfully created.  The future may be
+    ///             polled and will eventually return the final status of the
+    ///             operation.  If the operation was partially successful, the
+    ///             future will complete an error with no indication of which
+    ///             parts of `bufs` are valid.
+    /// - `Err(x)`: An error occurred before issueing the operation.  The result
+    ///             may be `drop`ped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # extern crate tempdir;
+    /// # extern crate tokio;
+    /// # extern crate tokio_file;
+    /// use std::borrow::Borrow;
+    /// use std::fs;
+    /// use std::io::Read;
+    /// use tempdir::TempDir;
+    /// use tokio::runtime::current_thread;
+    /// use tokio_file;
+    ///
+    /// const EXPECT: &[u8] = b"abcdefghij";
+    /// let wbuf0: Box<Borrow<[u8]>> = Box::new(&b"abcdef"[..]);
+    /// let wbuf1: Box<Borrow<[u8]>> = Box::new(&b"ghij"[..]);
+    /// let wbufs : Vec<Box<Borrow<[u8]>>> = vec![wbuf0, wbuf1];
+    /// let mut rbuf = Vec::new();
+    ///
+    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let path = dir.path().join("foo");
+    /// let file = fs::OpenOptions::new()
+    ///     .create(true)
+    ///     .write(true)
+    ///     .open(&path)
+    ///     .map(tokio_file::File::new)
+    ///     .unwrap();
+    /// let mut rt = current_thread::Runtime::new().unwrap();
+    /// let mut wi = rt.block_on(
+    ///     file.writev_at(wbufs, 0).unwrap()
+    /// ).unwrap();
+    ///
+    /// let w0 = wi.next().unwrap();
+    /// assert_eq!(w0.value.unwrap() as usize, 6);
+    /// let w1 = wi.next().unwrap();
+    /// assert_eq!(w1.value.unwrap() as usize, 4);
+    ///
+    /// let mut f = fs::File::open(&path).unwrap();
+    /// let len = f.read_to_end(&mut rbuf).unwrap();
+    /// assert_eq!(len, EXPECT.len());
+    /// assert_eq!(rbuf, EXPECT);
     pub fn writev_at(&self, mut bufs: Vec<Box<Borrow<[u8]>>>,
                      offset: u64) -> io::Result<LioFut> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
@@ -304,6 +495,34 @@ impl File {
     }
 
     /// Asynchronous equivalent of `std::fs::File::sync_all`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # extern crate tempdir;
+    /// # extern crate tokio;
+    /// # extern crate tokio_file;
+    /// use std::borrow::BorrowMut;
+    /// use std::fs;
+    /// use std::io::Write;
+    /// use tempdir::TempDir;
+    /// use tokio::runtime::current_thread;
+    /// use tokio_file;
+    ///
+    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let path = dir.path().join("foo");
+    ///
+    /// let file = fs::OpenOptions::new()
+    ///     .write(true)
+    ///     .create(true)
+    ///     .open(&path)
+    ///     .map(tokio_file::File::new)
+    ///     .unwrap();
+    /// let mut rt = current_thread::Runtime::new().unwrap();
+    /// let r = rt.block_on(
+    ///     file.sync_all().unwrap()
+    /// ).unwrap();
+    /// ```
     // TODO: add sync_all_data, for supported operating systems
     pub fn sync_all(&self) -> io::Result<AioFut> {
         let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
