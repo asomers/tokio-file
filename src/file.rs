@@ -7,8 +7,15 @@ use nix;
 use tokio::reactor::{Handle, PollEvented2};
 use std::{fs, io, mem};
 use std::borrow::{Borrow, BorrowMut};
+use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
+
+ioctl_read! {
+    /// Get the size of the entire device in bytes.  This should be a multiple
+    /// of the sector size.
+    diocgmediasize, 'd', 129, nix::libc::off_t
+}
 
 // LCOV_EXCL_START
 #[derive(Debug)]
@@ -163,6 +170,23 @@ pub struct File {
 // LCOV_EXCL_STOP
 
 impl File {
+    /// Get the file's size in bytes
+    pub fn len(&self) -> io::Result<u64> {
+        let md = self.metadata()?;
+        let ft = md.file_type();
+        if ft.is_block_device() || ft.is_char_device() {
+            let mut mediasize: nix::libc::off_t = unsafe {
+                mem::uninitialized()
+            };
+            unsafe {
+                diocgmediasize(self.file.as_raw_fd(), &mut mediasize)
+            }.map_err(|_| io::Error::from_raw_os_error(nix::errno::errno()))?;
+            Ok(mediasize as u64)
+        } else {
+            Ok(md.len())
+        }
+    }
+
     /// Get metadata from the underlying file
     ///
     /// POSIX AIO doesn't provide a way to do this asynchronously, so it must be

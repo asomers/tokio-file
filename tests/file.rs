@@ -1,4 +1,5 @@
 extern crate divbuf;
+extern crate nix;
 extern crate futures;
 extern crate tempdir;
 extern crate tokio;
@@ -6,9 +7,14 @@ extern crate tokio_file;
 
 use divbuf::DivBufShared;
 use futures::future::lazy;
+use nix::unistd::Uid;
 use std::borrow::{Borrow, BorrowMut};
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{Read, Write};
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
+use std::process::Command;
 use tempdir::TempDir;
 use tokio_file::File;
 use tokio::runtime::current_thread;
@@ -30,6 +36,43 @@ fn metadata() {
     let file = t!(File::open(&path));
     let metadata = file.metadata().unwrap();
     assert_eq!(9000, metadata.len());
+}
+
+#[test]
+fn len() {
+    let dir = t!(TempDir::new("tokio-file"));
+    let path = dir.path().join("read_at");
+    let f = t!(fs::File::create(&path));
+    f.set_len(9000).unwrap();
+    let file = t!(File::open(&path));
+    assert_eq!(9000, file.len().unwrap());
+}
+
+//File::len on a device node
+#[test]
+fn len_device() {
+    // mdconfig requires root access
+    if Uid::current().is_root() {
+        let output = Command::new("mdconfig")
+            .args(&["-a", "-t",  "swap", "-s", "1m"])
+            .output()
+            .expect("failed to allocate md(4) device");
+        // Strip the trailing "\n"
+        let l = output.stdout.len() - 1;
+        let mddev = OsStr::from_bytes(&output.stdout[0..l]);
+        let path = Path::new("/dev").join(&mddev);
+        let file = t!(File::open(&path));
+        let len = file.len().unwrap();
+        Command::new("mdconfig")
+            .args(&["-d", "-u"])
+            .arg(&mddev)
+            .output()
+            .expect("failed to deallocate md(4) device");
+        assert_eq!(len, 1048576);
+    } else {
+        println!("This test requires root privileges");
+    }
+
 }
 
 /// Demonstrate use of `tokio_file::File::new` with user-controlled options.
