@@ -17,6 +17,14 @@ ioctl_read! {
     diocgmediasize, 'd', 129, nix::libc::off_t
 }
 
+ioctl_read! {
+    diocgsectorsize, 'd', 128, nix::libc::c_uint
+}
+
+ioctl_read! {
+    diocgstripesize, 'd', 139, nix::libc::off_t
+}
+
 // LCOV_EXCL_START
 #[derive(Debug)]
 enum AioOp {
@@ -106,14 +114,12 @@ impl LioResult {
 }
 
 /// A Future representing an LIO operation.
-// LCOV_EXCL_START
 #[must_use = "futures do nothing unless polled"]
-#[derive(Debug)]
 pub struct LioFut {
     op: Option<PollEvented2<mio_aio::LioCb>>,
     state: AioState,
+    original_buffers: Option<Vec<Option<(BufRef, bool)>>>
 }
-// LCOV_EXCL_STOP
 
 impl Future for LioFut {
     type Item = Box<Iterator<Item = LioResult>>;
@@ -131,8 +137,9 @@ impl Future for LioFut {
                 },
                 Err(LioError::EAGAIN) =>
                     return Err(nix::Error::Sys(nix::errno::Errno::EAGAIN)),
-                Err(LioError::EIO) =>
-                    return Err(nix::Error::Sys(nix::errno::Errno::EIO)),
+                Err(LioError::EIO(_)) => {
+                    return Err(nix::Error::Sys(nix::errno::Errno::EIO))
+                },
             }
         }
         let poll_result = self.op
@@ -161,16 +168,37 @@ impl Future for LioFut {
                 },
                 Err(LioError::EAGAIN) =>
                     return Err(nix::Error::Sys(nix::errno::Errno::EAGAIN)),
-                Err(LioError::EIO) =>
+                Err(LioError::EIO(_)) =>
                     return Err(nix::Error::Sys(nix::errno::Errno::EIO)),
             }
         }
         let mut op = None;
         mem::swap(&mut op, &mut self.op);
-        let iter = op.unwrap().into_inner().unwrap().into_results(|iter| {
+        let obuf_iter = self.original_buffers.take().unwrap().into_iter();
+        let mut inner_iter = op.unwrap()
+            .into_inner().unwrap()
+            .into_results(|iter| {
             iter.map(|lr| {
                 LioResult{value: lr.result, buf: lr.buf_ref}
             })
+        });
+        let mut last_inner_result: Option<LioResult> = None;
+        let iter = obuf_iter.map(move |mut obuf_ref| {
+            if let Some((buf_ref, mc)) = obuf_ref.take() {
+                if mc {
+                    last_inner_result = Some(inner_iter.next().unwrap());
+                }
+                let lir = last_inner_result.as_ref().unwrap();
+                if lir.value.is_ok() {
+                    let len = buf_ref.len().unwrap() as isize;
+                    LioResult{value: Ok(len), buf: buf_ref}
+                } else {
+                    let r = lir.value.clone();
+                    LioResult{value: r, buf: buf_ref}
+                }
+            } else {
+                inner_iter.next().unwrap()
+            }
         });
 
         Ok(Async::Ready(Box::new(iter)))
@@ -182,6 +210,9 @@ impl Future for LioFut {
 #[derive(Debug)]
 pub struct File {
     file: fs::File,
+    /// The preferred (not necessarily minimum) sector size for accessing
+    /// the device
+    sectorsize: usize
 }
 // LCOV_EXCL_STOP
 
@@ -189,8 +220,7 @@ impl File {
     /// Get the file's size in bytes
     pub fn len(&self) -> io::Result<u64> {
         let md = self.metadata()?;
-        let ft = md.file_type();
-        if ft.is_block_device() || ft.is_char_device() {
+        if self.sectorsize > 1 {
             let mut mediasize: nix::libc::off_t = unsafe {
                 mem::uninitialized()
             };
@@ -228,7 +258,24 @@ impl File {
     ///     .unwrap();
     /// ```
     pub fn new(file: fs::File) -> File {
-        File{file}
+        let md = file.metadata().unwrap();
+        let ft = md.file_type();
+        let sectorsize = if ft.is_block_device() || ft.is_char_device() {
+            unsafe {
+                let mut sectorsize: u32 = mem::uninitialized();
+                let mut stripesize: nix::libc::off_t = mem::uninitialized();
+                diocgsectorsize(file.as_raw_fd(), &mut sectorsize).unwrap();
+                diocgstripesize(file.as_raw_fd(), &mut stripesize).unwrap();
+                if stripesize > 0 {
+                    stripesize as usize
+                } else {
+                    sectorsize as usize
+                }
+            }
+        } else {
+            1
+        };
+        File {file: file, sectorsize}
     }
 
     /// Open a new Tokio file with mode `O_RDWR | O_CREAT`.
@@ -243,7 +290,7 @@ impl File {
             .write(true)
             .create(true)
             .open(path)
-            .map(|f| File {file: f})
+            .map( File::new)
     }
 
     /// Asynchronous equivalent of `std::fs::File::read_at`
@@ -378,20 +425,62 @@ impl File {
                     offset: u64) -> io::Result<LioFut> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
-        for mut buf in bufs.drain(..) {
-            let buflen = {
-                let borrowed : &mut BorrowMut<[u8]> = buf.borrow_mut();
-                let slice : &mut [u8] = borrowed.borrow_mut();
-                slice.len()
+        let mut original_buffers = Vec::with_capacity(bufs.len());
+        let fd = self.file.as_raw_fd();
+        if self.sectorsize > 1 {
+            // Accumulate unaligned buffers to meet the sectorsize requirement
+            let mut oaccum: Option<Vec<u8>> = None;
+            for mut buf in bufs.drain(..) {
+                let l = buf.as_ref().borrow().len();
+                if let Some(mut accum) = oaccum.take() {
+                    let oldlen = accum.len();
+                    accum.resize(oldlen + l, 0u8);
+                    let l = accum.len();
+                    let buf_ref = BufRef::BoxedMutSlice(buf);
+                    original_buffers.push(Some((buf_ref, false)));
+                    if l % self.sectorsize == 0 {
+                        // issue the I/O
+                        let b = Box::new(accum);
+                        liocb.emplace_boxed_mut_slice(fd, offs, b, 0,
+                            mio_aio::LioOpcode::LIO_READ);
+                        offs += l as u64;
+                    } else {
+                        // Put it back
+                        oaccum = Some(accum);
+                    }
+                } else if l % self.sectorsize == 0 {
+                    liocb.emplace_boxed_mut_slice(fd, offs, buf, 0,
+                        mio_aio::LioOpcode::LIO_READ);
+                    offs += l as u64;
+                    original_buffers.push(None);
+                } else {
+                    let mut accum = vec![0u8; l];
+                    let buf_ref = BufRef::BoxedMutSlice(buf);
+                    original_buffers.push(Some((buf_ref, true)));
+                    oaccum = Some(accum);
+                }
+            }
+            if let Some(accum) = oaccum {
+                let l = accum.len();
+                assert_eq!(l % self.sectorsize, 0, "Device nodes must be accessed in multiples if the sectorsize");
+                let b = Box::new(accum);
+                liocb.emplace_boxed_mut_slice(fd, offs, b, 0,
+                    mio_aio::LioOpcode::LIO_READ);
+            }
+        } else {
+            for buf in bufs.drain(..) {
+                let l = buf.as_ref().borrow().len();
+                liocb.emplace_boxed_mut_slice(fd, offs, buf, 0,
+                    mio_aio::LioOpcode::LIO_READ);
+                original_buffers.push(None);
+                offs += l as u64;
             };
-            liocb.emplace_boxed_mut_slice(self.file.as_raw_fd(), offs, buf,
-                                      0, mio_aio::LioOpcode::LIO_READ);
-            offs += buflen as u64;
-        };
+        }
         let handle = Handle::current();
         Ok(LioFut{
             op: Some(PollEvented2::new_with_handle(liocb, &handle)?),
-            state: AioState::Allocated })
+            state: AioState::Allocated,
+            original_buffers: Some(original_buffers)})
     }
 
     /// Asynchronous equivalent of `std::fs::File::write_at`.
@@ -513,25 +602,78 @@ impl File {
     /// assert_eq!(len, EXPECT.len());
     /// assert_eq!(rbuf, EXPECT);
     pub fn writev_at(&self, mut bufs: Vec<Box<Borrow<[u8]>>>,
-                     offset: u64) -> io::Result<LioFut> {
+                     offset: u64) -> io::Result<LioFut>
+    {
+        let buflen = |buf: &Box<Borrow<[u8]>>|{
+            let borrowed : &Borrow<[u8]> = buf.borrow();
+            let slice : &[u8] = borrowed.borrow();
+            slice.len()
+        };
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
+        let mut original_buffers = Vec::with_capacity(bufs.len());
         let fd = self.file.as_raw_fd();
-        for buf in bufs.drain(..) {
-            let buflen = {
-                let borrowed : &Borrow<[u8]> = buf.borrow();
-                let slice : &[u8] = borrowed.borrow();
-                slice.len()
+        if self.sectorsize > 1 {
+            // Accumulate unaligned buffers to meet the sectorsize requirement
+            let mut oaccum: Option<Vec<u8>> = None;
+            for buf in bufs.drain(..) {
+                let l = buflen(&buf);
+                if let Some(mut accum) = oaccum.take() {
+                    {
+                        let sl: &[u8] = (*buf).borrow();
+                        accum.extend_from_slice(&sl[..]);
+                    }
+                    let l = accum.len();
+                    let buf_ref = BufRef::BoxedSlice(buf);
+                    original_buffers.push(Some((buf_ref, false)));
+                    if l % self.sectorsize == 0 {
+                        // issue the I/O
+                        let b = Box::new(accum);
+                        liocb.emplace_boxed_slice(fd, offs, b, 0,
+                            mio_aio::LioOpcode::LIO_WRITE);
+                        offs += l as u64;
+                    } else {
+                        // Put it back
+                        oaccum = Some(accum);
+                    }
+                } else if l % self.sectorsize == 0 {
+                    liocb.emplace_boxed_slice(fd, offs, buf, 0,
+                                              mio_aio::LioOpcode::LIO_WRITE);
+                    offs += l as u64;
+                    original_buffers.push(None);
+                } else {
+                    let mut accum = Vec::new();
+                    {
+                        let sl: &[u8] = (*buf).borrow();
+                        accum.extend_from_slice(&sl[..]);
+                    }
+                    let buf_ref = BufRef::BoxedSlice(buf);
+                    original_buffers.push(Some((buf_ref, true)));
+                    oaccum = Some(accum);
+                }
+            }
+            if let Some(accum) = oaccum {
+                let l = accum.len();
+                assert_eq!(l % self.sectorsize, 0, "Device nodes must be accessed in multiples if the sectorsize");
+                let b = Box::new(accum);
+                liocb.emplace_boxed_slice(fd, offs, b, 0,
+                    mio_aio::LioOpcode::LIO_WRITE);
+            }
+        } else {
+            for buf in bufs.drain(..) {
+                let l = buflen(&buf);
+                liocb.emplace_boxed_slice(fd, offs, buf, 0,
+                                          mio_aio::LioOpcode::LIO_WRITE);
+                original_buffers.push(None);
+                offs += l as u64;
             };
-            liocb.emplace_boxed_slice(fd, offs, buf, 0,
-                                      mio_aio::LioOpcode::LIO_WRITE);
-            offs += buflen as u64;
-        };
+        }
         let handle = Handle::current();
 
         Ok(LioFut{
             op: Some(PollEvented2::new_with_handle(liocb, &handle)?),
-            state: AioState::Allocated })
+            state: AioState::Allocated,
+            original_buffers: Some(original_buffers)})
     }
 
     /// Asynchronous equivalent of `std::fs::File::sync_all`

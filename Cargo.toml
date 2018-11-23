@@ -14,13 +14,14 @@ documentation = "https://asomers.github.io/tokio-file/tokio_file/"
 [dependencies]
 futures = "0.1.10"
 mio = "0.6.13"
-nix = "0.11.0"
-mio-aio = "0.3.0"
+nix = { git = "https://github.com/asomers/nix", rev = "f7be5da" }
+mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "b8bbf8d" }
 tokio = "0.1.6"
 
 [dev-dependencies]
 divbuf = "0.2.0"
 futures = "0.1"
+galvanic-test = "0.1.5"
 getopts = "0.2"
 sysctl = "0.1"
 tempdir = "0.3"

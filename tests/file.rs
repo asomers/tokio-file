@@ -1,4 +1,5 @@
 extern crate divbuf;
+#[macro_use] extern crate galvanic_test;
 extern crate nix;
 extern crate futures;
 extern crate tempdir;
@@ -12,7 +13,6 @@ use std::borrow::{Borrow, BorrowMut};
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{Read, Write};
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::process::Command;
 use tempdir::TempDir;
@@ -46,33 +46,6 @@ fn len() {
     f.set_len(9000).unwrap();
     let file = t!(File::open(&path));
     assert_eq!(9000, file.len().unwrap());
-}
-
-//File::len on a device node
-#[test]
-fn len_device() {
-    // mdconfig requires root access
-    if Uid::current().is_root() {
-        let output = Command::new("mdconfig")
-            .args(&["-a", "-t",  "swap", "-s", "1m"])
-            .output()
-            .expect("failed to allocate md(4) device");
-        // Strip the trailing "\n"
-        let l = output.stdout.len() - 1;
-        let mddev = OsStr::from_bytes(&output.stdout[0..l]);
-        let path = Path::new("/dev").join(&mddev);
-        let file = t!(File::open(&path));
-        let len = file.len().unwrap();
-        Command::new("mdconfig")
-            .args(&["-d", "-u"])
-            .arg(&mddev)
-            .output()
-            .expect("failed to deallocate md(4) device");
-        assert_eq!(len, 1048576);
-    } else {
-        println!("This test requires root privileges");
-    }
-
 }
 
 /// Demonstrate use of `tokio_file::File::new` with user-controlled options.
@@ -278,4 +251,152 @@ fn writev_at_static() {
     let len = t!(f.read_to_end(&mut rbuf));
     assert_eq!(len, EXPECT.len());
     assert_eq!(rbuf, EXPECT);
+}
+
+// Tests that work with device files
+test_suite! {
+    name dev;
+
+    use super::*;
+
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::PathBuf;
+
+    fixture md() -> Option<PathBuf> {
+        members {
+            devname: Option<PathBuf>
+        }
+        setup(&mut self ) {
+            self.devname = if Uid::current().is_root() {
+                let output = Command::new("mdconfig")
+                    .args(&["-a", "-t",  "swap", "-s", "1m"])
+                    .output()
+                    .expect("failed to allocate md(4) device");
+                // Strip the trailing "\n"
+                let l = output.stdout.len() - 1;
+                let mddev = OsStr::from_bytes(&output.stdout[0..l]);
+                Some(Path::new("/dev").join(&mddev))
+            } else {
+                None
+            };
+            self.devname.clone()
+        }
+
+        tear_down(&self) {
+            if let Some(ref path) = self.devname {
+                Command::new("mdconfig")
+                    .args(&["-d", "-u"])
+                    .arg(&path)
+                    .output()
+                    .expect("failed to deallocate md(4) device");
+            }
+        }
+    }
+
+    test len(md){
+        if let Some(path) = md.val {
+            let file = t!(File::open(&path));
+            let len = file.len().unwrap();
+            assert_eq!(len, 1048576);
+        } else {
+            println!("This test requires root privileges");
+        }
+    }
+
+    // readv with unaligned buffers
+    test readv_at(md) {
+        if let Some(path) = md.val {
+            let mut orig = vec![0u8; 2048];
+            &mut orig[100..512].copy_from_slice(&[1u8; 412]);
+            &mut orig[512..1024].copy_from_slice(&[2u8; 512]);
+            &mut orig[1024..1124].copy_from_slice(&[3u8; 100]);
+            &mut orig[1124..1224].copy_from_slice(&[4u8; 100]);
+            &mut orig[1224..1536].copy_from_slice(&[5u8; 312]);
+            &mut orig[1536..2048].copy_from_slice(&[6u8; 512]);
+            let dbses = [
+                DivBufShared::from(vec![0u8; 100]),
+                DivBufShared::from(vec![0u8; 412]),
+                DivBufShared::from(vec![0u8; 512]),
+                DivBufShared::from(vec![0u8; 100]),
+                DivBufShared::from(vec![0u8; 100]),
+                DivBufShared::from(vec![0u8; 312]),
+                DivBufShared::from(vec![0u8; 512]),
+            ];
+            let rbufs = dbses.iter().map(|dbs| {
+                Box::new(dbs.try_mut().unwrap()) as Box<BorrowMut<[u8]>>
+            }).collect::<Vec<_>>();
+            let mut rt = current_thread::Runtime::new().unwrap();
+            let file = t!(File::open(&path));
+
+            let mut ri = rt.block_on(lazy(|| {
+                file.readv_at(rbufs, 0).ok().expect("readv_at failed early")
+            })).unwrap();
+
+            for dbs in dbses.into_iter() {
+                let rr = ri.next().unwrap();
+                assert_eq!(rr.value.unwrap() as usize, dbs.len());
+            }
+
+            assert!(ri.next().is_none());
+            drop(file);
+
+            assert_eq!(&vec![0u8; 100][..], &orig[0..100]);
+            assert_eq!(&vec![1u8; 412][..], &orig[100..512]);
+            assert_eq!(&vec![2u8; 512][..], &orig[512..1024]);
+            assert_eq!(&vec![3u8; 100][..], &orig[1024..1124]);
+            assert_eq!(&vec![4u8; 100][..], &orig[1124..1224]);
+            assert_eq!(&vec![5u8; 312][..], &orig[1224..1536]);
+            assert_eq!(&vec![6u8; 512][..], &orig[1536..2048]);
+        } else {
+            println!("This test requires root privileges");
+        }
+    }
+
+    // writev with unaligned buffers
+    test writev_at(md) {
+        if let Some(path) = md.val {
+            let dbses = [
+                DivBufShared::from(vec![0u8; 100]),
+                DivBufShared::from(vec![1u8; 412]),
+                DivBufShared::from(vec![2u8; 512]),
+                DivBufShared::from(vec![3u8; 100]),
+                DivBufShared::from(vec![4u8; 100]),
+                DivBufShared::from(vec![5u8; 312]),
+                DivBufShared::from(vec![6u8; 512]),
+            ];
+            let wbufs = dbses.iter().map(|dbs| {
+                Box::new(dbs.try().unwrap()) as Box<Borrow<[u8]>>
+            }).collect::<Vec<_>>();
+            let mut rt = current_thread::Runtime::new().unwrap();
+            let file = t!(File::open(&path));
+
+            let mut wi = rt.block_on(lazy(|| {
+                file.writev_at(wbufs, 0).ok().expect("writev_at failed early")
+            })).unwrap();
+
+            for dbs in dbses.into_iter() {
+                let wbuf = dbs.try().unwrap();
+                let wr = wi.next().unwrap();
+                assert_eq!(wr.value.unwrap() as usize, wbuf.len());
+                let b : &Borrow<[u8]> = wr.buf.boxed_slice().unwrap().borrow();
+                assert_eq!(&wbuf[..], b.borrow());
+            }
+
+            assert!(wi.next().is_none());
+            drop(file);
+
+            let mut f = fs::File::open(&path).unwrap();
+            let mut rbuf = vec![0u8; 2048];
+            t!(f.read_exact(&mut rbuf));
+            assert_eq!(&vec![0u8; 100][..], &rbuf[0..100]);
+            assert_eq!(&vec![1u8; 412][..], &rbuf[100..512]);
+            assert_eq!(&vec![2u8; 512][..], &rbuf[512..1024]);
+            assert_eq!(&vec![3u8; 100][..], &rbuf[1024..1124]);
+            assert_eq!(&vec![4u8; 100][..], &rbuf[1124..1224]);
+            assert_eq!(&vec![5u8; 312][..], &rbuf[1224..1536]);
+            assert_eq!(&vec![6u8; 512][..], &rbuf[1536..2048]);
+        } else {
+            println!("This test requires root privileges");
+        }
+    }
 }

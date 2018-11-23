@@ -3,9 +3,14 @@
 ### Added
 - `File::new` allows creating a tokio file object from an arbitrary
   `std::fs::File`.
+- `LioFut`'s Item type is now `LioResult`, which indicates which operations
+  passed and which failed.
 
 ### Changed
 - `open` no longer takes a `Handle` argument.
+
+### Removed
+- `LioFut` no longer implements `Debug`.
 
 ## [0.3.0] - 2018-07-01
 ### Added
