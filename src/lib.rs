@@ -50,4 +50,4 @@ extern crate tokio;
 
 mod file;
 
-pub use file::{AioFut, AioResult, BufRef, File, LioFut};
+pub use file::{AioFut, AioResult, BufRef, File, LioFut, LioResult};

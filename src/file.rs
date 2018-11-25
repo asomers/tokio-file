@@ -67,11 +67,11 @@ impl AioFut {
     }
 }
 
-/// Holds the result of an individual aio or lio operation
+/// Holds the result of an individual aio operation
 pub struct AioResult {
     /// This is what the AIO operation would've returned, had it been
-    /// synchronous.  fsync operations return `None`, read and write operations
-    /// return an `isize`
+    /// synchronous and successful.  fsync operations return `None`, read and
+    /// write operations return an `isize`
     pub value: Option<isize>,
 
     /// Optionally, return ownership of the buffer that was used to create the
@@ -80,6 +80,26 @@ pub struct AioResult {
 }
 
 impl AioResult {
+    pub fn into_buf_ref(self) -> BufRef {
+        self.buf
+    }
+}
+
+/// Holds the result of an individual lio operation
+pub struct LioResult {
+    /// This is what the AIO operation would've returned, had it been
+    /// synchronous.
+    // Since lio_listio can't include fsync operations, there's no need to
+    // return a value of None, so we can use plain isize instead of
+    // Option<isize>
+    pub value: Result<isize, nix::Error>,
+
+    /// Optionally, return ownership of the buffer that was used to create the
+    /// LIO operation.
+    pub buf: BufRef
+}
+
+impl LioResult {
     pub fn into_buf_ref(self) -> BufRef {
         self.buf
     }
@@ -96,10 +116,10 @@ pub struct LioFut {
 // LCOV_EXCL_STOP
 
 impl Future for LioFut {
-    type Item = Box<Iterator<Item = AioResult>>;
+    type Item = Box<Iterator<Item = LioResult>>;
     type Error = nix::Error;
 
-    fn poll(&mut self) -> Poll<Box<Iterator<Item = AioResult>>, nix::Error> {
+    fn poll(&mut self) -> Poll<Box<Iterator<Item = LioResult>>, nix::Error> {
         if let AioState::Allocated = self.state {
             let result = self.op.as_mut().unwrap().get_mut().submit();
             match result {
@@ -149,11 +169,7 @@ impl Future for LioFut {
         mem::swap(&mut op, &mut self.op);
         let iter = op.unwrap().into_inner().unwrap().into_results(|iter| {
             iter.map(|lr| {
-                AioResult{
-                    // TODO: handle errors
-                    value: Some(lr.result.expect("aio_return")),
-                    buf: lr.buf_ref
-                }
+                LioResult{value: lr.result, buf: lr.buf_ref}
             })
         });
 
@@ -594,7 +610,7 @@ impl Future for AioFut {
             AioOp::Write(ref mut op) => op.get_mut().buf_ref(),
         };
         match result {
-            Ok(x) => Ok(Async::Ready(AioResult{value: x, buf: buf})),
+            Ok(x) => Ok(Async::Ready(AioResult{value: x, buf})),
             Err(x) => Err(x)
         }
     }
