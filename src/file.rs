@@ -253,9 +253,10 @@ impl File {
     ///     .read(true)
     ///     .write(true)
     ///     .create(true)
-    ///     .open("foo")
+    ///     .open("/tmp/tokio-file-new-example")
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
+    /// # fs::remove_file("/tmp/tokio-file-new-example").unwrap();
     /// ```
     pub fn new(file: fs::File) -> File {
         let md = file.metadata().unwrap();
