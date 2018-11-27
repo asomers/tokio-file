@@ -1,6 +1,7 @@
 ## [0.4.0] - 2018-11-11
 
 ### Added
+- `File` now implements `AsRawFd`.
 - `File::new` allows creating a tokio file object from an arbitrary
   `std::fs::File`.
 - `LioFut`'s Item type is now `LioResult`, which indicates which operations

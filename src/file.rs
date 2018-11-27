@@ -8,7 +8,7 @@ use tokio::reactor::{Handle, PollEvented2};
 use std::{fs, io, mem};
 use std::borrow::{Borrow, BorrowMut};
 use std::os::unix::fs::FileTypeExt;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::Path;
 
 ioctl_read! {
@@ -715,6 +715,12 @@ impl File {
         Ok(AioFut{
             op: AioOp::Fsync(PollEvented2::new_with_handle(aiocb, &handle)?),
             state: AioState::Allocated })
+    }
+}
+
+impl AsRawFd for File {
+    fn as_raw_fd(&self) -> RawFd {
+        self.file.as_raw_fd()
     }
 }
 
