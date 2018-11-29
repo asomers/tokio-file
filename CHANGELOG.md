@@ -1,4 +1,4 @@
-## [Unreleased] - ReleaseDate
+## [0.5.0] - 2018-11-29
 ### Added
 - `File` now implements `AsRawFd`.
 - `LioFut`'s Item type is now `LioResult`, which indicates which operations

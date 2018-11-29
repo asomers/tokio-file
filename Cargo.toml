@@ -1,6 +1,6 @@
 [package]
 name = "tokio-file"
-version = "0.4.1-pre"
+version = "0.5.0"
 authors = ["Alan Somers <asomers@gmail.com>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
