@@ -1,17 +1,22 @@
-## [0.4.0] - 2018-11-11
-
+## [Unreleased] - ReleaseDate
 ### Added
 - `File` now implements `AsRawFd`.
-- `File::new` allows creating a tokio file object from an arbitrary
-  `std::fs::File`.
 - `LioFut`'s Item type is now `LioResult`, which indicates which operations
   passed and which failed.
-
-### Changed
-- `open` no longer takes a `Handle` argument.
+- `File::len` gets the file length, whether a regular file or device node
+- `File::{readv_at, writev_at}` now work better with device nodes.
 
 ### Removed
 - `LioFut` no longer implements `Debug`.
+
+## [0.4.0] - 2018-11-11
+
+### Added
+- `File::new` allows creating a tokio file object from an arbitrary
+  `std::fs::File`.
+
+### Changed
+- `open` no longer takes a `Handle` argument.
 
 ## [0.3.0] - 2018-07-01
 ### Added
