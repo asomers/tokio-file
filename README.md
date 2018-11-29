@@ -3,6 +3,8 @@
 A library for integrating file I/O with [tokio].  File I/O can be seamlessly
 mixed with all other Future types within the Tokio reactor.
 
+[![Build Status](https://api.cirrus-ci.com/github/asomers/tokio-file.svg)](https://cirrus-ci.com/github/asomers/tokio-file)
+
 [tokio]: https://github.com/tokio-rs/tokio-core
 
 ```toml
