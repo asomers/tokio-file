@@ -14,8 +14,8 @@ documentation = "https://asomers.github.io/tokio-file/tokio_file/"
 [dependencies]
 futures = "0.1.10"
 mio = "0.6.13"
-nix = { git = "https://github.com/asomers/nix", rev = "f7be5da" }
-mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "b8bbf8d" }
+nix = "0.12.0"
+mio-aio = "0.4.0"
 tokio = "0.1.6"
 
 [dev-dependencies]

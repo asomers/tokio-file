@@ -333,8 +333,7 @@ impl File {
     ///
     /// let mut buf_ref = r.into_buf_ref();
     /// let borrowed : &mut BorrowMut<[u8]> = buf_ref.boxed_mut_slice()
-    ///                                              .unwrap()
-    ///                                              .borrow_mut();
+    ///                                              .unwrap();
     /// assert_eq!(&borrowed.borrow_mut()[..], &EXPECT[..]);
     /// ```
     pub fn read_at(&self, buf: Box<BorrowMut<[u8]>>,
@@ -412,12 +411,12 @@ impl File {
     ///
     /// let mut r0 = ri.next().unwrap();
     /// let b0 : &mut BorrowMut<[u8]> =
-    ///     r0.buf.boxed_mut_slice().unwrap().borrow_mut();
+    ///     r0.buf.boxed_mut_slice().unwrap();
     /// assert_eq!(&b0.borrow_mut()[..], &EXPECT0[..]);
     ///
     /// let mut r1 = ri.next().unwrap();
     /// let b1 : &mut BorrowMut<[u8]> =
-    ///     r1.buf.boxed_mut_slice().unwrap().borrow_mut();
+    ///     r1.buf.boxed_mut_slice().unwrap();
     /// assert_eq!(&b1.borrow_mut()[..], &EXPECT1[..]);
     ///
     /// assert!(ri.next().is_none());
