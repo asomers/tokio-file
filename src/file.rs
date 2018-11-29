@@ -67,10 +67,8 @@ impl AioFut {
         match self.op {
             AioOp::Fsync(ref io) =>
                 io.get_ref().aio_return().map(|_| None),
-            AioOp::Read(ref io) =>
-                io.get_ref().aio_return().map(|x| Some(x)),
-            AioOp::Write(ref io) =>
-                io.get_ref().aio_return().map(|x| Some(x)),
+            AioOp::Read(ref io) | AioOp::Write(ref io) =>
+                io.get_ref().aio_return().map(Some),
         }
     }
 }
@@ -193,7 +191,7 @@ impl Future for LioFut {
                     let len = buf_ref.len().unwrap() as isize;
                     LioResult{value: Ok(len), buf: buf_ref}
                 } else {
-                    let r = lir.value.clone();
+                    let r = lir.value;
                     LioResult{value: r, buf: buf_ref}
                 }
             } else {
@@ -216,6 +214,8 @@ pub struct File {
 }
 // LCOV_EXCL_STOP
 
+// is_empty doesn't make much sense for files
+#[cfg_attr(feature = "cargo-clippy", allow(clippy::len_without_is_empty))]
 impl File {
     /// Get the file's size in bytes
     pub fn len(&self) -> io::Result<u64> {
@@ -276,7 +276,7 @@ impl File {
         } else {
             1
         };
-        File {file: file, sectorsize}
+        File {file, sectorsize}
     }
 
     /// Open a new Tokio file with mode `O_RDWR | O_CREAT`.
@@ -604,9 +604,8 @@ impl File {
     pub fn writev_at(&self, mut bufs: Vec<Box<Borrow<[u8]>>>,
                      offset: u64) -> io::Result<LioFut>
     {
-        let buflen = |buf: &Box<Borrow<[u8]>>|{
-            let borrowed : &Borrow<[u8]> = buf.borrow();
-            let slice : &[u8] = borrowed.borrow();
+        let buflen = |buf: &Borrow<[u8]>|{
+            let slice : &[u8] = buf.borrow();
             slice.len()
         };
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
@@ -617,7 +616,7 @@ impl File {
             // Accumulate unaligned buffers to meet the sectorsize requirement
             let mut oaccum: Option<Vec<u8>> = None;
             for buf in bufs.drain(..) {
-                let l = buflen(&buf);
+                let l = buflen(buf.as_ref());
                 if let Some(mut accum) = oaccum.take() {
                     {
                         let sl: &[u8] = (*buf).borrow();
@@ -661,7 +660,7 @@ impl File {
             }
         } else {
             for buf in bufs.drain(..) {
-                let l = buflen(&buf);
+                let l = buflen(buf.as_ref());
                 liocb.emplace_boxed_slice(fd, offs, buf, 0,
                                           mio_aio::LioOpcode::LIO_WRITE);
                 original_buffers.push(None);

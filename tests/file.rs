@@ -32,7 +32,7 @@ fn metadata() {
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("read_at");
     let mut f = t!(fs::File::create(&path));
-    f.write(&wbuf).expect("write failed");
+    f.write_all(&wbuf).expect("write failed");
     let file = t!(File::open(&path));
     let metadata = file.metadata().unwrap();
     assert_eq!(9000, metadata.len());
@@ -75,7 +75,7 @@ fn read_at() {
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("read_at_divbuf_mut");
     let mut f = t!(fs::File::create(&path));
-    f.write(WBUF).expect("write failed");
+    f.write_all(WBUF).expect("write failed");
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();
     let r = t!(rt.block_on(lazy(|| {
@@ -105,11 +105,11 @@ fn readv_at() {
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("readv_at");
     let mut f = t!(fs::File::create(&path));
-    f.write(WBUF).expect("write failed");
+    f.write_all(WBUF).expect("write failed");
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();
     let mut ri = t!(rt.block_on(lazy(|| {
-        file.readv_at(rbufs, off).ok().expect("read_at failed early")
+        file.readv_at(rbufs, off).expect("read_at failed early")
     })));
 
     let mut r0 = ri.next().unwrap();
@@ -132,11 +132,11 @@ fn sync_all() {
     let dir = t!(TempDir::new("tokio-file"));
     let path = dir.path().join("sync_all");
     let mut f = t!(fs::File::create(&path));
-    f.write(WBUF).expect("write failed");
+    f.write_all(WBUF).expect("write failed");
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();
     let r = t!(rt.block_on(lazy(|| {
-        file.sync_all().ok().expect("sync_all failed early")
+        file.sync_all().expect("sync_all failed early")
     })));
     assert!(r.value.is_none());
 }
@@ -152,7 +152,7 @@ fn write_at() {
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();
     let r = t!(rt.block_on(lazy(|| {
-        file.write_at(wbuf.clone(), 0).ok().expect("write_at failed early")
+        file.write_at(wbuf.clone(), 0).expect("write_at failed early")
     })));
     assert_eq!(r.value.unwrap() as usize, wbuf.len());
 
@@ -177,7 +177,7 @@ fn writev_at() {
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();
     let mut wi = t!(rt.block_on(lazy(|| {
-        file.writev_at(wbufs, 0).ok().expect("writev_at failed early")
+        file.writev_at(wbufs, 0).expect("writev_at failed early")
     })));
 
     let w0 = wi.next().unwrap();
@@ -210,7 +210,7 @@ fn write_at_static() {
         let file = t!(File::open(&path));
         let mut rt = current_thread::Runtime::new().unwrap();
         let r = t!(rt.block_on(lazy(|| {
-            file.write_at(wbuf, 0).ok().expect("write_at failed early")
+            file.write_at(wbuf, 0).expect("write_at failed early")
         })));
         assert_eq!(r.value.unwrap() as usize, WBUF.len());
     }
@@ -236,7 +236,7 @@ fn writev_at_static() {
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();
     let mut wi = t!(rt.block_on(lazy(|| {
-        file.writev_at(wbufs, 0).ok().expect("writev_at failed early")
+        file.writev_at(wbufs, 0).expect("writev_at failed early")
     })));
 
     let w0 = wi.next().unwrap();
@@ -297,7 +297,7 @@ test_suite! {
         if let Some(path) = md.val {
             let file = t!(File::open(&path));
             let len = file.len().unwrap();
-            assert_eq!(len, 1048576);
+            assert_eq!(len, 1_048_576);
         } else {
             println!("This test requires root privileges");
         }
@@ -307,12 +307,12 @@ test_suite! {
     test readv_at(md) {
         if let Some(path) = md.val {
             let mut orig = vec![0u8; 2048];
-            &mut orig[100..512].copy_from_slice(&[1u8; 412]);
-            &mut orig[512..1024].copy_from_slice(&[2u8; 512]);
-            &mut orig[1024..1124].copy_from_slice(&[3u8; 100]);
-            &mut orig[1124..1224].copy_from_slice(&[4u8; 100]);
-            &mut orig[1224..1536].copy_from_slice(&[5u8; 312]);
-            &mut orig[1536..2048].copy_from_slice(&[6u8; 512]);
+            orig[100..512].copy_from_slice(&[1u8; 412]);
+            orig[512..1024].copy_from_slice(&[2u8; 512]);
+            orig[1024..1124].copy_from_slice(&[3u8; 100]);
+            orig[1124..1224].copy_from_slice(&[4u8; 100]);
+            orig[1224..1536].copy_from_slice(&[5u8; 312]);
+            orig[1536..2048].copy_from_slice(&[6u8; 512]);
             let dbses = [
                 DivBufShared::from(vec![0u8; 100]),
                 DivBufShared::from(vec![0u8; 412]),
@@ -329,7 +329,7 @@ test_suite! {
             let file = t!(File::open(&path));
 
             let mut ri = rt.block_on(lazy(|| {
-                file.readv_at(rbufs, 0).ok().expect("readv_at failed early")
+                file.readv_at(rbufs, 0).expect("readv_at failed early")
             })).unwrap();
 
             for dbs in dbses.into_iter() {
@@ -371,7 +371,7 @@ test_suite! {
             let file = t!(File::open(&path));
 
             let mut wi = rt.block_on(lazy(|| {
-                file.writev_at(wbufs, 0).ok().expect("writev_at failed early")
+                file.writev_at(wbufs, 0).expect("writev_at failed early")
             })).unwrap();
 
             for dbs in dbses.into_iter() {

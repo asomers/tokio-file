@@ -53,14 +53,14 @@ fn write_at_eagain() {
     }).collect();
 
     let mut rt = current_thread::Runtime::new().unwrap();
-    let wi = t!(rt.block_on(lazy(|| {
+    let results = t!(rt.block_on(lazy(|| {
         future::join_all(futs)
     })));
 
     let mut n_ok = 0;
     let mut n_eagain = 0;
-    for i in 0..count {
-        match wi[i].as_ref() {
+    for result in results {
+        match result.as_ref() {
             Ok(aio_result) => {
                 n_ok += 1;
                 assert_eq!(aio_result.value.unwrap(), 4096);
