@@ -50,7 +50,7 @@ fn writev_at_eio() {
         }
     }
     if num_listios == 0 {
-        panic!("Can't find a configuration for max_aio_queue_per_proc={} AIO_LISTIO_MAX={}");
+        panic!("Can't find a configuration for max_aio_queue_per_proc={} AIO_LISTIO_MAX={}", maqpp, alm);
     }
 
     let dir = t!(TempDir::new("tokio-file"));
@@ -68,7 +68,6 @@ fn writev_at_eio() {
             wbufs.push(Box::new(wbuf));
         }
         file.writev_at(wbufs, 4096 * (i * ops_per_listio) as u64)
-            .ok()
             .expect("writev_at failed early")
     }).collect();
 
