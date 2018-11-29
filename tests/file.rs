@@ -86,7 +86,7 @@ fn read_at() {
     let mut buf_ref = r.into_buf_ref();
     let borrowed : &mut BorrowMut<[u8]> = buf_ref.boxed_mut_slice()
                                                  .unwrap()
-                                                 .borrow_mut();
+                                                 ;//.borrow_mut();
     assert_eq!(&borrowed.borrow_mut()[..], &EXPECT[..]);
 }
 
@@ -114,12 +114,12 @@ fn readv_at() {
 
     let mut r0 = ri.next().unwrap();
     assert_eq!(r0.value.unwrap() as usize, EXPECT0.len());
-    let b0 : &mut BorrowMut<[u8]> = r0.buf.boxed_mut_slice().unwrap().borrow_mut();
+    let b0 : &mut BorrowMut<[u8]> = r0.buf.boxed_mut_slice().unwrap();
     assert_eq!(&b0.borrow_mut()[..], &EXPECT0[..]);
 
     let mut r1 = ri.next().unwrap();
     assert_eq!(r1.value.unwrap() as usize, EXPECT1.len());
-    let b1 : &mut BorrowMut<[u8]> = r1.buf.boxed_mut_slice().unwrap().borrow_mut();
+    let b1 : &mut BorrowMut<[u8]> = r1.buf.boxed_mut_slice().unwrap();
     assert_eq!(&b1.borrow_mut()[..], &EXPECT1[..]);
 
     assert!(ri.next().is_none());
@@ -182,12 +182,12 @@ fn writev_at() {
 
     let w0 = wi.next().unwrap();
     assert_eq!(w0.value.unwrap() as usize, dbs0.len());
-    let b0 : &Borrow<[u8]> = w0.buf.boxed_slice().unwrap().borrow();
+    let b0 : &Borrow<[u8]> = w0.buf.boxed_slice().unwrap();
     assert_eq!(&dbs0.try().unwrap()[..], b0.borrow());
 
     let w1 = wi.next().unwrap();
     assert_eq!(w1.value.unwrap() as usize, dbs1.len());
-    let b1 : &Borrow<[u8]> = w1.buf.boxed_slice().unwrap().borrow();
+    let b1 : &Borrow<[u8]> = w1.buf.boxed_slice().unwrap();
     assert_eq!(&dbs1.try().unwrap()[..], b1.borrow());
 
     assert!(wi.next().is_none());
@@ -378,7 +378,7 @@ test_suite! {
                 let wbuf = dbs.try().unwrap();
                 let wr = wi.next().unwrap();
                 assert_eq!(wr.value.unwrap() as usize, wbuf.len());
-                let b : &Borrow<[u8]> = wr.buf.boxed_slice().unwrap().borrow();
+                let b : &Borrow<[u8]> = wr.buf.boxed_slice().unwrap();
                 assert_eq!(&wbuf[..], b.borrow());
             }
 
