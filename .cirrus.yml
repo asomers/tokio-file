@@ -14,8 +14,11 @@ task:
     - pkg install -y curl
     - curl https://sh.rustup.rs -sSf --output rustup.sh
     - sh rustup.sh -y
+    - $HOME/.cargo/bin/rustup toolchain install nightly
     # In 11.2, aio on ufs is considered unsafe
     - sysctl vfs.aio.enable_unsafe=1
   test_script:
     - . $HOME/.cargo/env
     - cargo test
+    # Also test on nightly, to run the benchmarks
+    - cargo +nightly test --all-targets
