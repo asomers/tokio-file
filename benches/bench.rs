@@ -16,7 +16,6 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use tempdir::TempDir;
 use test::Bencher;
-use tokio::reactor::Handle;
 use tokio::runtime::current_thread::Runtime;
 use tokio_file::File;
 
@@ -34,7 +33,7 @@ fn bench_aio_read(bench: &mut Bencher) {
 
     // Prep the reactor
     let mut runtime = Runtime::new().unwrap();
-    let file = File::open(path, Handle::current()).unwrap();
+    let file = File::open(path).unwrap();
 
     bench.iter(move || {
         let rbuf = Box::new(dbs.try_mut().unwrap());
