@@ -71,6 +71,7 @@ fn bench_threaded_read(bench: &mut Bencher) {
                             .unwrap()
                             .read_at(&mut rbuf[..], 0)
                             .expect("read failed");
+            drop(rbuf);
             tx.send(len).expect("sending failed");
         });
         let len = runtime.block_on(rx).expect("receiving failed");
@@ -104,8 +105,11 @@ fn bench_threadpool_read(bench: &mut Bencher) {
             let v: Option<TpOpspec> = prx.recv().unwrap();
             if let Some(mut op) = v {
                 let f = op.f.lock().unwrap();
-                let sl = &mut op.buf[..];
-                let len: usize = f.read_at(sl, op.offset).unwrap();
+                let len = {
+                    let sl = &mut op.buf[..];
+                    f.read_at(sl, op.offset).unwrap()
+                };
+                drop(op.buf);
                 op.tx.send(len).expect("send failed");
             } else {
                 break;
