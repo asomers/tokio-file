@@ -46,7 +46,7 @@ extern crate futures;
 extern crate mio;
 extern crate mio_aio;
 #[macro_use] extern crate nix;
-extern crate tokio;
+extern crate tokio_reactor;
 
 mod file;
 

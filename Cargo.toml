@@ -16,7 +16,7 @@ futures = "0.1.10"
 mio = "0.6.13"
 nix = "0.12.0"
 mio-aio = "0.4.0"
-tokio = "0.1.6"
+tokio-reactor = "0.1.6"
 
 [dev-dependencies]
 divbuf = "0.2.0"
@@ -25,6 +25,7 @@ galvanic-test = "0.1.5"
 getopts = "0.2"
 sysctl = "0.1"
 tempdir = "0.3"
+tokio = "0.1.6"
 
 [[test]]
 name = "functional"
