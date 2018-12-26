@@ -4,7 +4,7 @@ use mio::unix::UnixReady;
 use mio_aio;
 pub use mio_aio::{BufRef, LioError};
 use nix;
-use tokio::reactor::{Handle, PollEvented2};
+use tokio_reactor::{Handle, PollEvented};
 use std::{fs, io, mem};
 use std::borrow::{Borrow, BorrowMut};
 use std::os::unix::fs::FileTypeExt;
@@ -28,9 +28,9 @@ ioctl_read! {
 // LCOV_EXCL_START
 #[derive(Debug)]
 enum AioOp {
-    Fsync(PollEvented2<mio_aio::AioCb<'static>>),
-    Read(PollEvented2<mio_aio::AioCb<'static>>),
-    Write(PollEvented2<mio_aio::AioCb<'static>>),
+    Fsync(PollEvented<mio_aio::AioCb<'static>>),
+    Read(PollEvented<mio_aio::AioCb<'static>>),
+    Write(PollEvented<mio_aio::AioCb<'static>>),
 }
 // LCOV_EXCL_STOP
 
@@ -114,7 +114,7 @@ impl LioResult {
 /// A Future representing an LIO operation.
 #[must_use = "futures do nothing unless polled"]
 pub struct LioFut {
-    op: Option<PollEvented2<mio_aio::LioCb>>,
+    op: Option<PollEvented<mio_aio::LioCb>>,
     state: AioState,
     original_buffers: Option<Vec<Option<(BufRef, bool)>>>
 }
@@ -345,7 +345,7 @@ impl File {
                             mio_aio::LioOpcode::LIO_NOP);
         let handle = Handle::current();
         Ok(AioFut{
-            op: AioOp::Read(PollEvented2::new_with_handle(aiocb, &handle)?),
+            op: AioOp::Read(PollEvented::new_with_handle(aiocb, &handle)?),
             state: AioState::Allocated })
     }
 
@@ -478,7 +478,7 @@ impl File {
         }
         let handle = Handle::current();
         Ok(LioFut{
-            op: Some(PollEvented2::new_with_handle(liocb, &handle)?),
+            op: Some(PollEvented::new_with_handle(liocb, &handle)?),
             state: AioState::Allocated,
             original_buffers: Some(original_buffers)})
     }
@@ -532,7 +532,7 @@ impl File {
             mio_aio::LioOpcode::LIO_NOP);
         let handle = Handle::current();
         Ok(AioFut{
-            op: AioOp::Write(PollEvented2::new_with_handle(aiocb, &handle)?),
+            op: AioOp::Write(PollEvented::new_with_handle(aiocb, &handle)?),
             state: AioState::Allocated })
     }
 
@@ -670,7 +670,7 @@ impl File {
         let handle = Handle::current();
 
         Ok(LioFut{
-            op: Some(PollEvented2::new_with_handle(liocb, &handle)?),
+            op: Some(PollEvented::new_with_handle(liocb, &handle)?),
             state: AioState::Allocated,
             original_buffers: Some(original_buffers)})
     }
@@ -711,7 +711,7 @@ impl File {
                             );
         let handle = Handle::current();
         Ok(AioFut{
-            op: AioOp::Fsync(PollEvented2::new_with_handle(aiocb, &handle)?),
+            op: AioOp::Fsync(PollEvented::new_with_handle(aiocb, &handle)?),
             state: AioState::Allocated })
     }
 }
