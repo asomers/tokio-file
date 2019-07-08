@@ -221,13 +221,13 @@ impl File {
     pub fn len(&self) -> io::Result<u64> {
         let md = self.metadata()?;
         if self.sectorsize > 1 {
-            let mut mediasize: nix::libc::off_t = unsafe {
-                mem::uninitialized()
-            };
+            let mut mediasize = mem::MaybeUninit::<nix::libc::off_t>::uninit();
+            // This ioctl is always safe
             unsafe {
-                diocgmediasize(self.file.as_raw_fd(), &mut mediasize)
+                diocgmediasize(self.file.as_raw_fd(), mediasize.as_mut_ptr())
             }.map_err(|_| io::Error::from_raw_os_error(nix::errno::errno()))?;
-            Ok(mediasize as u64)
+            // Safe because we know the ioctl succeeded
+            unsafe { Ok(mediasize.assume_init() as u64) }
         } else {
             Ok(md.len())
         }
@@ -262,15 +262,16 @@ impl File {
         let md = file.metadata().unwrap();
         let ft = md.file_type();
         let sectorsize = if ft.is_block_device() || ft.is_char_device() {
+            let mut sectorsize = mem::MaybeUninit::<u32>::uninit();;
+            let mut stripesize = mem::MaybeUninit::<nix::libc::off_t>::uninit();
+            let fd = file.as_raw_fd();
             unsafe {
-                let mut sectorsize: u32 = mem::uninitialized();
-                let mut stripesize: nix::libc::off_t = mem::uninitialized();
-                diocgsectorsize(file.as_raw_fd(), &mut sectorsize).unwrap();
-                diocgstripesize(file.as_raw_fd(), &mut stripesize).unwrap();
-                if stripesize > 0 {
-                    stripesize as usize
+                diocgsectorsize(fd, sectorsize.as_mut_ptr()).unwrap();
+                diocgstripesize(fd, stripesize.as_mut_ptr()).unwrap();
+                if stripesize.assume_init() > 0 {
+                    stripesize.assume_init() as usize
                 } else {
-                    sectorsize as usize
+                    sectorsize.assume_init() as usize
                 }
             }
         } else {
