@@ -430,7 +430,7 @@ impl File {
         if self.sectorsize > 1 {
             // Accumulate unaligned buffers to meet the sectorsize requirement
             let mut oaccum: Option<Vec<u8>> = None;
-            for mut buf in bufs.drain(..) {
+            for buf in bufs.drain(..) {
                 let l = buf.as_ref().borrow().len();
                 if let Some(mut accum) = oaccum.take() {
                     let oldlen = accum.len();
@@ -454,7 +454,7 @@ impl File {
                     offs += l as u64;
                     original_buffers.push(None);
                 } else {
-                    let mut accum = vec![0u8; l];
+                    let accum = vec![0u8; l];
                     let buf_ref = BufRef::BoxedMutSlice(buf);
                     original_buffers.push(Some((buf_ref, true)));
                     oaccum = Some(accum);
