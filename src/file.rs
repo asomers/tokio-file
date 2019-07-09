@@ -4,7 +4,7 @@ use mio::unix::UnixReady;
 use mio_aio;
 pub use mio_aio::{BufRef, LioError};
 use nix;
-use tokio_reactor::{Handle, PollEvented};
+use tokio_reactor::PollEvented;
 use std::{fs, io, mem};
 use std::borrow::{Borrow, BorrowMut};
 use std::os::unix::fs::FileTypeExt;
@@ -36,7 +36,7 @@ enum AioOp {
 
 // LCOV_EXCL_START
 /// Represents the progress of a single AIO operation
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 enum AioState {
     /// The AioFut has been allocated, but not submitted to the system
     Allocated,
@@ -124,6 +124,11 @@ impl Future for LioFut {
     type Error = nix::Error;
 
     fn poll(&mut self) -> Poll<Box<Iterator<Item = LioResult>>, nix::Error> {
+        let poll_result = self.op
+                              .as_mut()
+                              .unwrap()
+                              .poll_read_ready(UnixReady::lio().into())
+                              .unwrap();
         if let AioState::Allocated = self.state {
             let result = self.op.as_mut().unwrap().get_mut().submit();
             match result {
@@ -140,15 +145,10 @@ impl Future for LioFut {
                 },
             }
         }
-        let poll_result = self.op
-                              .as_mut()
-                              .unwrap()
-                              .poll_read_ready(UnixReady::lio().into())
-                              .unwrap();
         if poll_result == Async::NotReady {
             return Ok(Async::NotReady);
         }
-        if let AioState::Incomplete = self.state {
+        if AioState::Incomplete == self.state {
             // Some requests must've completed; now issue the rest.
             let result = self.op.as_mut().unwrap().get_mut().resubmit();
             self.op
@@ -344,9 +344,8 @@ impl File {
                             buf,
                             0,  //priority
                             mio_aio::LioOpcode::LIO_NOP);
-        let handle = Handle::current();
         Ok(AioFut{
-            op: AioOp::Read(PollEvented::new_with_handle(aiocb, &handle)?),
+            op: AioOp::Read(PollEvented::new(aiocb)),
             state: AioState::Allocated })
     }
 
@@ -477,9 +476,8 @@ impl File {
                 offs += l as u64;
             };
         }
-        let handle = Handle::current();
         Ok(LioFut{
-            op: Some(PollEvented::new_with_handle(liocb, &handle)?),
+            op: Some(PollEvented::new(liocb)),
             state: AioState::Allocated,
             original_buffers: Some(original_buffers)})
     }
@@ -531,9 +529,8 @@ impl File {
         let fd = self.file.as_raw_fd();
         let aiocb = mio_aio::AioCb::from_boxed_slice(fd, offset, buf, 0,
             mio_aio::LioOpcode::LIO_NOP);
-        let handle = Handle::current();
         Ok(AioFut{
-            op: AioOp::Write(PollEvented::new_with_handle(aiocb, &handle)?),
+            op: AioOp::Write(PollEvented::new(aiocb)),
             state: AioState::Allocated })
     }
 
@@ -668,10 +665,9 @@ impl File {
                 offs += l as u64;
             };
         }
-        let handle = Handle::current();
 
         Ok(LioFut{
-            op: Some(PollEvented::new_with_handle(liocb, &handle)?),
+            op: Some(PollEvented::new(liocb)),
             state: AioState::Allocated,
             original_buffers: Some(original_buffers)})
     }
@@ -710,9 +706,8 @@ impl File {
         let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
                             0,  //priority
                             );
-        let handle = Handle::current();
         Ok(AioFut{
-            op: AioOp::Fsync(PollEvented::new_with_handle(aiocb, &handle)?),
+            op: AioOp::Fsync(PollEvented::new(aiocb)),
             state: AioState::Allocated })
     }
 }
@@ -728,18 +723,6 @@ impl Future for AioFut {
     type Error = nix::Error;
 
     fn poll(&mut self) -> Poll<AioResult, nix::Error> {
-        if let AioState::Allocated = self.state {
-            let r = match self.op {
-                AioOp::Fsync(ref pe) => pe.get_ref()
-                    .fsync(mio_aio::AioFsyncMode::O_SYNC),
-                AioOp::Read(ref pe) => pe.get_ref().read(),
-                AioOp::Write(ref pe) => pe.get_ref().write(),
-            };
-            if r.is_err() {
-                return Err(r.unwrap_err());
-            }
-            self.state = AioState::InProgress;
-        }
         let poll_result = match self.op {
                 AioOp::Fsync(ref mut io) =>
                     io.poll_read_ready(UnixReady::aio().into()),
@@ -749,6 +732,18 @@ impl Future for AioFut {
                     io.poll_read_ready(UnixReady::aio().into()),
         }.unwrap();
         if poll_result == Async::NotReady {
+            if self.state == AioState::Allocated {
+                let r = match self.op {
+                    AioOp::Fsync(ref pe) => pe.get_ref()
+                        .fsync(mio_aio::AioFsyncMode::O_SYNC),
+                    AioOp::Read(ref pe) => pe.get_ref().read(),
+                    AioOp::Write(ref pe) => pe.get_ref().write(),
+                };
+                if r.is_err() {
+                    return Err(r.unwrap_err());
+                }
+                self.state = AioState::InProgress;
+            }
             return Ok(Async::NotReady);
         }
         let result = self.aio_return();

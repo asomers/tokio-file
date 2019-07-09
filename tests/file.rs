@@ -109,7 +109,7 @@ fn readv_at() {
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();
     let mut ri = t!(rt.block_on(lazy(|| {
-        file.readv_at(rbufs, off).expect("read_at failed early")
+        file.readv_at(rbufs, off).expect("readv_at failed early")
     })));
 
     let mut r0 = ri.next().unwrap();
