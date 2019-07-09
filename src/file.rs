@@ -120,10 +120,10 @@ pub struct LioFut {
 }
 
 impl Future for LioFut {
-    type Item = Box<Iterator<Item = LioResult>>;
+    type Item = Box<dyn Iterator<Item = LioResult>>;
     type Error = nix::Error;
 
-    fn poll(&mut self) -> Poll<Box<Iterator<Item = LioResult>>, nix::Error> {
+    fn poll(&mut self) -> Poll<Box<dyn Iterator<Item = LioResult>>, nix::Error> {
         let poll_result = self.op
                               .as_mut()
                               .unwrap()
@@ -337,7 +337,7 @@ impl File {
     ///                                              .unwrap();
     /// assert_eq!(&borrowed.borrow_mut()[..], &EXPECT[..]);
     /// ```
-    pub fn read_at(&self, buf: Box<BorrowMut<[u8]>>,
+    pub fn read_at(&self, buf: Box<dyn BorrowMut<[u8]>>,
                    offset: u64) -> io::Result<AioFut> {
         let aiocb = mio_aio::AioCb::from_boxed_mut_slice(self.file.as_raw_fd(),
                             offset,  //offset
@@ -392,7 +392,7 @@ impl File {
     /// const EXPECT1: &[u8] = b"ghijklmn";
     /// let rbuf0 = Box::new(vec![0; 4].into_boxed_slice());
     /// let rbuf1 = Box::new(vec![0; 8].into_boxed_slice());
-    /// let rbufs : Vec<Box<BorrowMut<[u8]>>> = vec![rbuf0, rbuf1];
+    /// let rbufs : Vec<Box<dyn BorrowMut<[u8]>>> = vec![rbuf0, rbuf1];
     ///
     /// let dir = TempDir::new("tokio-file").unwrap();
     /// let path = dir.path().join("foo");
@@ -421,7 +421,7 @@ impl File {
     ///
     /// assert!(ri.next().is_none());
     /// ```
-    pub fn readv_at(&self, mut bufs: Vec<Box<BorrowMut<[u8]>>>,
+    pub fn readv_at(&self, mut bufs: Vec<Box<dyn BorrowMut<[u8]>>>,
                     offset: u64) -> io::Result<LioFut> {
         let mut liocb = mio_aio::LioCb::with_capacity(bufs.len());
         let mut offs = offset;
@@ -502,7 +502,7 @@ impl File {
     /// use tokio_file;
     ///
     /// let contents = b"abcdef";
-    /// let wbuf: Box<Borrow<[u8]>> = Box::new(&contents[..]);
+    /// let wbuf: Box<dyn Borrow<[u8]>> = Box::new(&contents[..]);
     /// let mut rbuf = Vec::new();
     ///
     /// let dir = TempDir::new("tokio-file").unwrap();
@@ -524,7 +524,7 @@ impl File {
     /// assert_eq!(file.read_to_end(&mut rbuf).unwrap(), contents.len());
     /// assert_eq!(&contents[..], &rbuf[..]);
     /// ```
-    pub fn write_at(&self, buf: Box<Borrow<[u8]>>,
+    pub fn write_at(&self, buf: Box<dyn Borrow<[u8]>>,
                     offset: u64) -> io::Result<AioFut> {
         let fd = self.file.as_raw_fd();
         let aiocb = mio_aio::AioCb::from_boxed_slice(fd, offset, buf, 0,
@@ -572,9 +572,9 @@ impl File {
     /// use tokio_file;
     ///
     /// const EXPECT: &[u8] = b"abcdefghij";
-    /// let wbuf0: Box<Borrow<[u8]>> = Box::new(&b"abcdef"[..]);
-    /// let wbuf1: Box<Borrow<[u8]>> = Box::new(&b"ghij"[..]);
-    /// let wbufs : Vec<Box<Borrow<[u8]>>> = vec![wbuf0, wbuf1];
+    /// let wbuf0: Box<dyn Borrow<[u8]>> = Box::new(&b"abcdef"[..]);
+    /// let wbuf1: Box<dyn Borrow<[u8]>> = Box::new(&b"ghij"[..]);
+    /// let wbufs : Vec<Box<dyn Borrow<[u8]>>> = vec![wbuf0, wbuf1];
     /// let mut rbuf = Vec::new();
     ///
     /// let dir = TempDir::new("tokio-file").unwrap();
@@ -599,10 +599,10 @@ impl File {
     /// let len = f.read_to_end(&mut rbuf).unwrap();
     /// assert_eq!(len, EXPECT.len());
     /// assert_eq!(rbuf, EXPECT);
-    pub fn writev_at(&self, mut bufs: Vec<Box<Borrow<[u8]>>>,
+    pub fn writev_at(&self, mut bufs: Vec<Box<dyn Borrow<[u8]>>>,
                      offset: u64) -> io::Result<LioFut>
     {
-        let buflen = |buf: &Borrow<[u8]>|{
+        let buflen = |buf: &dyn Borrow<[u8]>|{
             let slice : &[u8] = buf.borrow();
             slice.len()
         };

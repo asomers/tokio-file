@@ -84,9 +84,8 @@ fn read_at() {
     assert_eq!(r.value.unwrap() as usize, EXPECT.len());
 
     let mut buf_ref = r.into_buf_ref();
-    let borrowed : &mut BorrowMut<[u8]> = buf_ref.boxed_mut_slice()
-                                                 .unwrap()
-                                                 ;//.borrow_mut();
+    let borrowed : &mut dyn BorrowMut<[u8]> = buf_ref.boxed_mut_slice()
+                                                     .unwrap();
     assert_eq!(&borrowed.borrow_mut()[..], &EXPECT[..]);
 }
 
@@ -99,7 +98,7 @@ fn readv_at() {
     let rbuf0 = Box::new(dbs0.try_mut().unwrap());
     let dbs1 = DivBufShared::from(vec![0; 8]);
     let rbuf1 = Box::new(dbs1.try_mut().unwrap());
-    let rbufs : Vec<Box<BorrowMut<[u8]>>> = vec![rbuf0, rbuf1];
+    let rbufs : Vec<Box<dyn BorrowMut<[u8]>>> = vec![rbuf0, rbuf1];
     let off = 2;
 
     let dir = t!(TempDir::new("tokio-file"));
@@ -114,12 +113,12 @@ fn readv_at() {
 
     let mut r0 = ri.next().unwrap();
     assert_eq!(r0.value.unwrap() as usize, EXPECT0.len());
-    let b0 : &mut BorrowMut<[u8]> = r0.buf.boxed_mut_slice().unwrap();
+    let b0 : &mut dyn BorrowMut<[u8]> = r0.buf.boxed_mut_slice().unwrap();
     assert_eq!(&b0.borrow_mut()[..], &EXPECT0[..]);
 
     let mut r1 = ri.next().unwrap();
     assert_eq!(r1.value.unwrap() as usize, EXPECT1.len());
-    let b1 : &mut BorrowMut<[u8]> = r1.buf.boxed_mut_slice().unwrap();
+    let b1 : &mut dyn BorrowMut<[u8]> = r1.buf.boxed_mut_slice().unwrap();
     assert_eq!(&b1.borrow_mut()[..], &EXPECT1[..]);
 
     assert!(ri.next().is_none());
@@ -169,7 +168,7 @@ fn writev_at() {
     let wbuf0 = Box::new(dbs0.try().unwrap());
     let dbs1 = DivBufShared::from(&b"ghij"[..]);
     let wbuf1 = Box::new(dbs1.try().unwrap());
-    let wbufs : Vec<Box<Borrow<[u8]>>> = vec![wbuf0, wbuf1];
+    let wbufs : Vec<Box<dyn Borrow<[u8]>>> = vec![wbuf0, wbuf1];
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new("tokio-file"));
@@ -182,12 +181,12 @@ fn writev_at() {
 
     let w0 = wi.next().unwrap();
     assert_eq!(w0.value.unwrap() as usize, dbs0.len());
-    let b0 : &Borrow<[u8]> = w0.buf.boxed_slice().unwrap();
+    let b0 : &dyn Borrow<[u8]> = w0.buf.boxed_slice().unwrap();
     assert_eq!(&dbs0.try().unwrap()[..], b0.borrow());
 
     let w1 = wi.next().unwrap();
     assert_eq!(w1.value.unwrap() as usize, dbs1.len());
-    let b1 : &Borrow<[u8]> = w1.buf.boxed_slice().unwrap();
+    let b1 : &dyn Borrow<[u8]> = w1.buf.boxed_slice().unwrap();
     assert_eq!(&dbs1.try().unwrap()[..], b1.borrow());
 
     assert!(wi.next().is_none());
@@ -228,7 +227,7 @@ fn writev_at_static() {
     const WBUF1: &[u8] = b"ghi";
     let wbuf0 = Box::new(WBUF0);
     let wbuf1 = Box::new(WBUF1);
-    let wbufs : Vec<Box<Borrow<[u8]>>> = vec![wbuf0, wbuf1];
+    let wbufs : Vec<Box<dyn Borrow<[u8]>>> = vec![wbuf0, wbuf1];
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new("tokio-file"));
@@ -323,7 +322,7 @@ test_suite! {
                 DivBufShared::from(vec![0u8; 512]),
             ];
             let rbufs = dbses.iter().map(|dbs| {
-                Box::new(dbs.try_mut().unwrap()) as Box<BorrowMut<[u8]>>
+                Box::new(dbs.try_mut().unwrap()) as Box<dyn BorrowMut<[u8]>>
             }).collect::<Vec<_>>();
             let mut rt = current_thread::Runtime::new().unwrap();
             let file = t!(File::open(&path));
@@ -365,7 +364,7 @@ test_suite! {
                 DivBufShared::from(vec![6u8; 512]),
             ];
             let wbufs = dbses.iter().map(|dbs| {
-                Box::new(dbs.try().unwrap()) as Box<Borrow<[u8]>>
+                Box::new(dbs.try().unwrap()) as Box<dyn Borrow<[u8]>>
             }).collect::<Vec<_>>();
             let mut rt = current_thread::Runtime::new().unwrap();
             let file = t!(File::open(&path));
@@ -378,7 +377,7 @@ test_suite! {
                 let wbuf = dbs.try().unwrap();
                 let wr = wi.next().unwrap();
                 assert_eq!(wr.value.unwrap() as usize, wbuf.len());
-                let b : &Borrow<[u8]> = wr.buf.boxed_slice().unwrap();
+                let b : &dyn Borrow<[u8]> = wr.buf.boxed_slice().unwrap();
                 assert_eq!(&wbuf[..], b.borrow());
             }
 
