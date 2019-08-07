@@ -11,8 +11,7 @@ task:
     - freebsd-version
   # Install Rust
   setup_script:
-    - pkg install -y curl
-    - curl https://sh.rustup.rs -sSf --output rustup.sh
+    - fetch https://sh.rustup.rs -o rustup.sh
     - sh rustup.sh -y
     - $HOME/.cargo/bin/rustup toolchain install nightly
     # In 11.3, aio on ufs is considered unsafe
