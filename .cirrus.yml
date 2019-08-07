@@ -1,5 +1,5 @@
 freebsd_instance:
-  image: freebsd-11-3-release-amd64
+  image: freebsd-11-3-stable-amd64-v20190801
 
 task:
   name: cargo test
