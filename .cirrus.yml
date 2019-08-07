@@ -1,5 +1,5 @@
 freebsd_instance:
-  image: freebsd-11-2-release-amd64
+  image: freebsd-11-3-release-amd64
 
 task:
   name: cargo test
@@ -15,7 +15,7 @@ task:
     - curl https://sh.rustup.rs -sSf --output rustup.sh
     - sh rustup.sh -y
     - $HOME/.cargo/bin/rustup toolchain install nightly
-    # In 11.2, aio on ufs is considered unsafe
+    # In 11.3, aio on ufs is considered unsafe
     - sysctl vfs.aio.enable_unsafe=1
   test_script:
     - . $HOME/.cargo/env
