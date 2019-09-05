@@ -1,4 +1,4 @@
-## [Unreleased] - ReleaseDate
+## [0.5.1] - 2019-09-05
 
 ### Changed
 - Updated mio-aio and nix dependencies
