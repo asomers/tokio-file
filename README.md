@@ -4,14 +4,17 @@ A library for integrating file I/O with [tokio].  File I/O can be seamlessly
 mixed with all other Future types within the Tokio reactor.
 
 [![Build Status](https://api.cirrus-ci.com/github/asomers/tokio-file.svg)](https://cirrus-ci.com/github/asomers/tokio-file)
+[![Crates.io](https://img.shields.io/crates/v/tokio-file.svg)](https://crates.io/crates/tokio-file)
+
+[Documentation](https://asomers.github.io/tokio-file/tokio_file/index.html)
 
 [tokio]: https://github.com/tokio-rs/tokio-core
 
 ```toml
 # Cargo.toml
 [depdendencies]
-tokio = "0.1.8"
-tokio-file = "0.3.0"
+tokio = "0.1.6"
+tokio-file = "0.5.0"
 ```
 
 # Usage
