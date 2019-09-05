@@ -262,7 +262,7 @@ impl File {
         let md = file.metadata().unwrap();
         let ft = md.file_type();
         let sectorsize = if ft.is_block_device() || ft.is_char_device() {
-            let mut sectorsize = mem::MaybeUninit::<u32>::uninit();;
+            let mut sectorsize = mem::MaybeUninit::<u32>::uninit();
             let mut stripesize = mem::MaybeUninit::<nix::libc::off_t>::uninit();
             let fd = file.as_raw_fd();
             unsafe {
