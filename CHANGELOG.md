@@ -1,3 +1,10 @@
+## [Unreleased] - ReleaseDate
+
+### Changed
+- Updated mio-aio and nix dependencies
+  ([49fb7a60](https://github.com/asomers/tokio-file/commit/49fb7a6044cf6954d228b9f4b9497845741b6258))
+  ([07502b84](https://github.com/asomers/tokio-file/commit/07502b84c38039c22741395211a7e0a722a6fb52))
+
 ## [0.5.0] - 2018-11-29
 ### Added
 - `File` now implements `AsRawFd`.
