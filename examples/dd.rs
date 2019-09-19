@@ -14,7 +14,7 @@ extern crate tokio;
 extern crate tokio_file;
 
 use divbuf::DivBufShared;
-use futures::future::{Future, ok};
+use futures::future::Future;
 use futures::future::lazy;
 use futures::{Stream, stream};
 use getopts::Options;
@@ -95,9 +95,8 @@ fn main() {
                 let wbuf = Box::new(dbs.try().unwrap());
                 dd.outfile.write_at(wbuf, dd.ofs.get())
                 .unwrap()
-                .and_then(|r| {
+                .map(|r| {
                     dd.ofs.set(dd.ofs.get() + r.value.unwrap() as u64);
-                    ok(())
                 })
             })
         })
