@@ -143,7 +143,7 @@ fn sync_all() {
 #[test]
 fn write_at() {
     let dbs = DivBufShared::from(&b"abcdef"[..]);
-    let wbuf = Box::new(dbs.try().unwrap());
+    let wbuf = Box::new(dbs.try_const().unwrap());
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new("tokio-file"));
@@ -165,9 +165,9 @@ fn write_at() {
 fn writev_at() {
     const EXPECT: &[u8] = b"abcdefghij";
     let dbs0 = DivBufShared::from(&b"abcdef"[..]);
-    let wbuf0 = Box::new(dbs0.try().unwrap());
+    let wbuf0 = Box::new(dbs0.try_const().unwrap());
     let dbs1 = DivBufShared::from(&b"ghij"[..]);
-    let wbuf1 = Box::new(dbs1.try().unwrap());
+    let wbuf1 = Box::new(dbs1.try_const().unwrap());
     let wbufs : Vec<Box<dyn Borrow<[u8]>>> = vec![wbuf0, wbuf1];
     let mut rbuf = Vec::new();
 
@@ -182,12 +182,12 @@ fn writev_at() {
     let w0 = wi.next().unwrap();
     assert_eq!(w0.value.unwrap() as usize, dbs0.len());
     let b0 : &dyn Borrow<[u8]> = w0.buf.boxed_slice().unwrap();
-    assert_eq!(&dbs0.try().unwrap()[..], b0.borrow());
+    assert_eq!(&dbs0.try_const().unwrap()[..], b0.borrow());
 
     let w1 = wi.next().unwrap();
     assert_eq!(w1.value.unwrap() as usize, dbs1.len());
     let b1 : &dyn Borrow<[u8]> = w1.buf.boxed_slice().unwrap();
-    assert_eq!(&dbs1.try().unwrap()[..], b1.borrow());
+    assert_eq!(&dbs1.try_const().unwrap()[..], b1.borrow());
 
     assert!(wi.next().is_none());
 
@@ -364,7 +364,7 @@ test_suite! {
                 DivBufShared::from(vec![6u8; 512]),
             ];
             let wbufs = dbses.iter().map(|dbs| {
-                Box::new(dbs.try().unwrap()) as Box<dyn Borrow<[u8]>>
+                Box::new(dbs.try_const().unwrap()) as Box<dyn Borrow<[u8]>>
             }).collect::<Vec<_>>();
             let mut rt = current_thread::Runtime::new().unwrap();
             let file = t!(File::open(&path));
@@ -374,7 +374,7 @@ test_suite! {
             })).unwrap();
 
             for dbs in dbses.into_iter() {
-                let wbuf = dbs.try().unwrap();
+                let wbuf = dbs.try_const().unwrap();
                 let wr = wi.next().unwrap();
                 assert_eq!(wr.value.unwrap() as usize, wbuf.len());
                 let b : &dyn Borrow<[u8]> = wr.buf.boxed_slice().unwrap();

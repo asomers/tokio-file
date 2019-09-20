@@ -39,7 +39,7 @@ fn write_at_eagain() {
         DivBufShared::from(vec![0u8; 4096])
     }).collect();
     let futs : Vec<_> = (0..count).map(|i| {
-        let wbuf = Box::new(dbses[i].try().unwrap());
+        let wbuf = Box::new(dbses[i].try_const().unwrap());
         file.write_at(wbuf, 4096 * i as u64).unwrap()
             //future::join_all annoyingly cancels all remaining futures after
             //the first error, so we have to pack both the real ok and real

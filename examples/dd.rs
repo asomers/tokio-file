@@ -92,7 +92,7 @@ fn main() {
             .unwrap()
             .and_then(|r| {
                 mem::drop(r);   // Release the mutable reference to dbs
-                let wbuf = Box::new(dbs.try().unwrap());
+                let wbuf = Box::new(dbs.try_const().unwrap());
                 dd.outfile.write_at(wbuf, dd.ofs.get())
                 .unwrap()
                 .map(|r| {

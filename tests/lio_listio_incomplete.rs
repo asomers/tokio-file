@@ -64,7 +64,7 @@ fn writev_at_eio() {
     let futs: Vec<_> = (0..num_listios).map(|i| {
         let mut wbufs: Vec<Box<dyn Borrow<[u8]>>> = Vec::with_capacity(ops_per_listio);
         for j in 0..ops_per_listio {
-            let wbuf = dbses[i][j].try().unwrap();
+            let wbuf = dbses[i][j].try_const().unwrap();
             wbufs.push(Box::new(wbuf));
         }
         file.writev_at(wbufs, 4096 * (i * ops_per_listio) as u64)
