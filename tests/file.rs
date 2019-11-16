@@ -331,7 +331,7 @@ test_suite! {
                 file.readv_at(rbufs, 0).expect("readv_at failed early")
             })).unwrap();
 
-            for dbs in dbses.into_iter() {
+            for dbs in dbses.iter() {
                 let rr = ri.next().unwrap();
                 assert_eq!(rr.value.unwrap() as usize, dbs.len());
             }
@@ -373,7 +373,7 @@ test_suite! {
                 file.writev_at(wbufs, 0).expect("writev_at failed early")
             })).unwrap();
 
-            for dbs in dbses.into_iter() {
+            for dbs in dbses.iter() {
                 let wbuf = dbs.try_const().unwrap();
                 let wr = wi.next().unwrap();
                 assert_eq!(wr.value.unwrap() as usize, wbuf.len());
