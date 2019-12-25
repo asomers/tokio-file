@@ -1,11 +1,9 @@
-use divbuf::DivBufShared;
 use futures::future;
 use nix::unistd::{SysconfVar, sysconf};
-use std::borrow::Borrow;
 use sysctl::CtlValue;
 use tempfile::TempDir;
 use tokio_file::File;
-use tokio::runtime::current_thread;
+use tokio::runtime;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -48,29 +46,22 @@ fn writev_at_eio() {
     let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at_eio");
     let file = t!(File::open(&path));
-    let dbses: Vec<_> = (0..num_listios).map(|_| {
-        (0..ops_per_listio).map(|_| {
-            DivBufShared::from(vec![0u8; 4096])
-        }).collect::<Vec<_>>()
-    }).collect();
-    let futs: Vec<_> = (0..num_listios).map(|i| {
-        let mut wbufs: Vec<Box<dyn Borrow<[u8]>>> = Vec::with_capacity(ops_per_listio);
-        for j in 0..ops_per_listio {
-            let wbuf = dbses[i][j].try_const().unwrap();
-            wbufs.push(Box::new(wbuf));
-        }
-        file.writev_at(wbufs, 4096 * (i * ops_per_listio) as u64)
-            .expect("writev_at failed early")
-    }).collect();
+    let wbuf = vec![0u8; 4096];
 
-    let mut rt = current_thread::Runtime::new().unwrap();
-    let wi = t!(rt.block_on(future::lazy(|| {
-        future::join_all(futs)
-    })));
+    let mut rt = runtime::Runtime::new().unwrap();
+    let wi = rt.block_on(async {
+        let futs = (0..num_listios).map(|i| {
+            let mut wbufs = Vec::with_capacity(ops_per_listio);
+            for _ in 0..ops_per_listio {
+                wbufs.push(&wbuf[..])
+            }
+            file.writev_at(&wbufs[..], 4096 * (i * ops_per_listio) as u64)
+                .expect("writev_at failed early")
+        });
+        future::join_all(futs).await
+    });
 
-    for lio_result in wi {
-        for aio_result in lio_result {
-            assert_eq!(aio_result.value.unwrap() as usize, 4096);
-        }
+    for r in wi {
+        assert_eq!(r.unwrap(), wbuf.len() * ops_per_listio);
     }
 }

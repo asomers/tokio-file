@@ -1,9 +1,7 @@
-use divbuf::DivBufShared;
-use futures::future::lazy;
-use futures::{Future, future};
+use futures::future;
 use tempfile::TempDir;
-use tokio_file::{AioResult, File};
-use tokio::runtime::current_thread;
+use tokio_file::File;
+use tokio::runtime;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -27,27 +25,15 @@ fn write_at_eagain() {
     let path = dir.path().join("write_at_eagain.0");
     let file = t!(File::open(&path));
 
-    let dbses: Vec<_> = (0..count).map(|_| {
-        DivBufShared::from(vec![0u8; 4096])
-    }).collect();
-    let futs : Vec<_> = (0..count).map(|i| {
-        let wbuf = Box::new(dbses[i].try_const().unwrap());
-        file.write_at(wbuf, 4096 * i as u64).unwrap()
-            //future::join_all annoyingly cancels all remaining futures after
-            //the first error, so we have to pack both the real ok and real
-            //error types into a single "fake ok" type.
-            .map(|r| -> Result<AioResult, nix::Error> {
-                Ok(r)
-            })
-            .or_else(|e| -> Result<Result<AioResult, nix::Error>, ()> {
-                Ok(Err(e))
-            })
-    }).collect();
+    let wbuf = vec![0u8; 4096];
 
-    let mut rt = current_thread::Runtime::new().unwrap();
-    let results = t!(rt.block_on(lazy(|| {
-        future::join_all(futs)
-    })));
+    let mut rt = runtime::Runtime::new().unwrap();
+    let results = rt.block_on(async {
+        let futs = (0..count).map(|i| {
+            file.write_at(&wbuf[..], 4096 * i as u64).unwrap()
+        });
+        future::join_all(futs).await
+    });
 
     let mut n_ok = 0;
     let mut n_eagain = 0;

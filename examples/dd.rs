@@ -7,17 +7,14 @@
 //!     cargo run --example dd -- -b 4096 -c 100 /tmp/infile /tmp/outfile
 //!     cmp /tmp/infile /tmp/outfile
 
-use divbuf::DivBufShared;
-use futures::future::Future;
-use futures::future::lazy;
-use futures::{Stream, stream};
+use futures::{StreamExt, stream};
 use getopts::Options;
-use std::env;
-use std::cell::Cell;
-use std::mem;
-use std::rc::Rc;
-use std::str::FromStr;
-use tokio::runtime::current_thread;
+use std::{
+    cell::Cell,
+    env,
+    rc::Rc,
+    str::FromStr};
+use tokio::runtime;
 use tokio_file::File;
 
 struct Dd {
@@ -71,28 +68,28 @@ fn main() {
     let infile = &matches.free[0];
     let outfile = &matches.free[1];
 
-    let dd = Dd::new(infile.as_str(), outfile.as_str(), bs, count);
-    let dbs = Rc::new(DivBufShared::from(vec![0; bs]));
-    let mut rt = current_thread::Runtime::new().unwrap();
-    rt.block_on(lazy(|| {
-        // Note: this simple example will fail if infile isn't big enough.  A
-        // robust program would use loop_fn instead of stream.for_each so it can
-        // exit early.
-        let stream = stream::iter_ok(0..dd.count);
+    let dd = Rc::new(Dd::new(infile.as_str(), outfile.as_str(), bs, count));
+    let mut rt = runtime::Runtime::new().unwrap();
+    // Note: this simple example will fail if infile isn't big enough.  A
+    // robust program would use try_for_each instead of for_each so it can
+    // exit early.
+    let stream = stream::iter(0..dd.count);
+    rt.block_on(async {
         stream.for_each(|blocknum| {
-            let rbuf = Box::new(dbs.try_mut().unwrap());
-            let ofs = (dd.bs * blocknum) as u64;
-            dd.infile.read_at(rbuf, ofs)
-            .unwrap()
-            .and_then(|r| {
-                mem::drop(r);   // Release the mutable reference to dbs
-                let wbuf = Box::new(dbs.try_const().unwrap());
-                dd.outfile.write_at(wbuf, dd.ofs.get())
+            let ddc = dd.clone();
+            async move {
+                let mut rbuf = vec![0; bs];
+                let ofs: u64 = (ddc.bs * blocknum) as u64;
+                ddc.infile.read_at(&mut rbuf[..], ofs)
                 .unwrap()
-                .map(|r| {
-                    dd.ofs.set(dd.ofs.get() + r.value.unwrap() as u64);
-                })
-            })
-        })
-    })).expect("Copying failed");
+                .await
+                .unwrap();
+                let r = ddc.outfile.write_at(&rbuf[..], ddc.ofs.get())
+                .unwrap()
+                .await
+                .unwrap();
+                ddc.ofs.set(ddc.ofs.get() + r.value.unwrap() as u64);
+            }
+        }).await
+    })
 }

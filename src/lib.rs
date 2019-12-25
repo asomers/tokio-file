@@ -8,14 +8,12 @@
 //! # Examples
 //!
 //! ```
-//! use std::borrow::Borrow;
 //! use std::fs;
 //! use std::io::Read;
 //! use tempfile::TempDir;
-//! use tokio::runtime::current_thread;
+//! use tokio::runtime::Runtime;
 //!
 //! let contents = b"abcdef";
-//! let wbuf: Box<Borrow<[u8]>> = Box::new(&contents[..]);
 //! let mut rbuf = Vec::new();
 //!
 //! let dir = TempDir::new().unwrap();
@@ -26,10 +24,10 @@
 //!     .open(&path)
 //!     .map(tokio_file::File::new)
 //!     .unwrap();
-//! let mut rt = current_thread::Runtime::new().unwrap();
-//! let r = rt.block_on(
-//!     file.write_at(wbuf, 0).unwrap()
-//! ).unwrap();
+//! let mut rt = Runtime::new().unwrap();
+//! let r = rt.block_on(async {
+//!     file.write_at(contents, 0).unwrap().await
+//! }).unwrap();
 //! assert_eq!(r.value.unwrap() as usize, contents.len());
 //! drop(file);
 //!
@@ -40,4 +38,4 @@
 
 mod file;
 
-pub use file::{AioFut, AioResult, BufRef, File, LioFut, LioResult};
+pub use file::{AioFut, AioResult, File, ReadvAt, WritevAt};
