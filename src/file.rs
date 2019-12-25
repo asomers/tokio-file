@@ -1,9 +1,7 @@
 // vim: tw=80
 use futures::{Async, Future, Poll};
 use mio::unix::UnixReady;
-use mio_aio;
 pub use mio_aio::{BufRef, LioError};
-use nix;
 use tokio_reactor::PollEvented;
 use std::{fs, io, mem};
 use std::borrow::{Borrow, BorrowMut};
@@ -11,17 +9,17 @@ use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::Path;
 
-ioctl_read! {
+nix::ioctl_read! {
     /// Get the size of the entire device in bytes.  This should be a multiple
     /// of the sector size.
     diocgmediasize, 'd', 129, nix::libc::off_t
 }
 
-ioctl_read! {
+nix::ioctl_read! {
     diocgsectorsize, 'd', 128, nix::libc::c_uint
 }
 
-ioctl_read! {
+nix::ioctl_read! {
     diocgstripesize, 'd', 139, nix::libc::off_t
 }
 
@@ -304,15 +302,11 @@ impl File {
     /// # Examples
     ///
     /// ```
-    /// # extern crate tempdir;
-    /// # extern crate tokio;
-    /// # extern crate tokio_file;
     /// use std::borrow::BorrowMut;
     /// use std::fs;
     /// use std::io::Write;
     /// use tempdir::TempDir;
     /// use tokio::runtime::current_thread;
-    /// use tokio_file;
     ///
     /// const WBUF: &[u8] = b"abcdef";
     /// const EXPECT: &[u8] = b"cdef";
@@ -377,15 +371,11 @@ impl File {
     /// # Examples
     ///
     /// ```
-    /// # extern crate tempdir;
-    /// # extern crate tokio;
-    /// # extern crate tokio_file;
     /// use std::borrow::BorrowMut;
     /// use std::fs;
     /// use std::io::Write;
     /// use tempdir::TempDir;
     /// use tokio::runtime::current_thread;
-    /// use tokio_file;
     ///
     /// const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
     /// const EXPECT0: &[u8] = b"cdef";
@@ -491,15 +481,11 @@ impl File {
     /// # Examples
     ///
     /// ```
-    /// # extern crate tempdir;
-    /// # extern crate tokio;
-    /// # extern crate tokio_file;
     /// use std::borrow::Borrow;
     /// use std::fs;
     /// use std::io::Read;
     /// use tempdir::TempDir;
     /// use tokio::runtime::current_thread;
-    /// use tokio_file;
     ///
     /// let contents = b"abcdef";
     /// let wbuf: Box<dyn Borrow<[u8]>> = Box::new(&contents[..]);
@@ -561,15 +547,11 @@ impl File {
     /// # Examples
     ///
     /// ```
-    /// # extern crate tempdir;
-    /// # extern crate tokio;
-    /// # extern crate tokio_file;
     /// use std::borrow::Borrow;
     /// use std::fs;
     /// use std::io::Read;
     /// use tempdir::TempDir;
     /// use tokio::runtime::current_thread;
-    /// use tokio_file;
     ///
     /// const EXPECT: &[u8] = b"abcdefghij";
     /// let wbuf0: Box<dyn Borrow<[u8]>> = Box::new(&b"abcdef"[..]);
@@ -677,15 +659,11 @@ impl File {
     /// # Examples
     ///
     /// ```
-    /// # extern crate tempdir;
-    /// # extern crate tokio;
-    /// # extern crate tokio_file;
     /// use std::borrow::BorrowMut;
     /// use std::fs;
     /// use std::io::Write;
     /// use tempdir::TempDir;
     /// use tokio::runtime::current_thread;
-    /// use tokio_file;
     ///
     /// let dir = TempDir::new("tokio-file").unwrap();
     /// let path = dir.path().join("foo");
