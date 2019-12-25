@@ -21,3 +21,5 @@ task:
     - cargo test
     # Also test on nightly, to run the benchmarks
     - cargo +nightly test --all-targets
+    # Also run tests with sudo, because some need it for mdconfig
+    - sudo -E cargo test --tests
