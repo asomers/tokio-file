@@ -717,8 +717,8 @@ impl Future for AioFut {
                     AioOp::Read(ref pe) => pe.get_ref().read(),
                     AioOp::Write(ref pe) => pe.get_ref().write(),
                 };
-                if r.is_err() {
-                    return Err(r.unwrap_err());
+                if let Err(e) = r {
+                    return Err(e);
                 }
                 self.state = AioState::InProgress;
             }
