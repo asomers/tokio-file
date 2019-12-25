@@ -8,15 +8,11 @@
 //! # Examples
 //!
 //! ```
-//! # extern crate tempdir;
-//! # extern crate tokio;
-//! # extern crate tokio_file;
 //! use std::borrow::Borrow;
 //! use std::fs;
 //! use std::io::Read;
 //! use tempdir::TempDir;
 //! use tokio::runtime::current_thread;
-//! use tokio_file;
 //!
 //! let contents = b"abcdef";
 //! let wbuf: Box<Borrow<[u8]>> = Box::new(&contents[..]);
@@ -41,12 +37,6 @@
 //! assert_eq!(file.read_to_end(&mut rbuf).unwrap(), contents.len());
 //! assert_eq!(&contents[..], &rbuf[..]);
 //! ```
-
-extern crate futures;
-extern crate mio;
-extern crate mio_aio;
-#[macro_use] extern crate nix;
-extern crate tokio_reactor;
 
 mod file;
 
