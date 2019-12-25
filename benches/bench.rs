@@ -29,7 +29,7 @@ fn bench_aio_read(bench: &mut Bencher) {
     let mut f = fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
     let dbs = DivBufShared::from(vec![0; FLEN]);
-    f.write(&wbuf).expect("write failed");
+    f.write_all(&wbuf).expect("write failed");
 
     // Prep the reactor
     let mut runtime = Runtime::new().unwrap();
@@ -37,7 +37,8 @@ fn bench_aio_read(bench: &mut Bencher) {
 
     bench.iter(move || {
         let rbuf = Box::new(dbs.try_mut().unwrap());
-        let fut = file.read_at(rbuf, 0).ok().expect("read_at failed early");
+        let fut = file.read_at(rbuf, 0)
+            .expect("read_at failed early");
         let len = runtime.block_on(fut)
                          .unwrap()
                          .value.unwrap();
@@ -55,12 +56,11 @@ fn bench_threaded_read(bench: &mut Bencher) {
     let mut f = fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
     let dbs = DivBufShared::from(vec![0; FLEN]);
-    f.write(&wbuf).expect("write failed");
+    f.write_all(&wbuf).expect("write failed");
 
     // Prep the reactor
     let mut runtime = Runtime::new().unwrap();
-    let pathclone = path.clone();
-    let file = Arc::new(Mutex::new(fs::File::open(&pathclone).unwrap()));
+    let file = Arc::new(Mutex::new(fs::File::open(&path).unwrap()));
 
     bench.iter(move || {
         let (tx, rx) = oneshot::channel::<usize>();
@@ -95,7 +95,7 @@ fn bench_threadpool_read(bench: &mut Bencher) {
     let path = dir.path().join("threadpool_read");
     let mut f = fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
-    f.write(&wbuf).expect("write failed");
+    f.write_all(&wbuf).expect("write failed");
 
     // Prep the thread "pool"
     let (_ptx, prx) = mpsc::channel();
@@ -119,18 +119,18 @@ fn bench_threadpool_read(bench: &mut Bencher) {
 
     // Prep the reactor
     let mut runtime = Runtime::new().unwrap();
-    let pathclone = path.clone();
-    let file = Arc::new(Mutex::new(fs::File::open(&pathclone).unwrap()));
+    let file = Arc::new(Mutex::new(fs::File::open(&path).unwrap()));
     let ptxclone = ptx.clone();
 
     bench.iter(move || {
         let dbs = DivBufShared::from(vec![0; FLEN]);
         let (tx, rx) = oneshot::channel::<usize>();
-        let opspec = TpOpspec{
+        let opspec = TpOpspec {
             f: file.clone(),
             buf: dbs.try_mut().unwrap(),
             offset: 0,
-            tx: tx};
+            tx
+        };
         ptxclone.send(Some(opspec)).unwrap();
 
         let len = runtime.block_on(rx).expect("receiving failed");

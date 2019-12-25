@@ -39,8 +39,8 @@ impl Dd {
         let inf = File::open(infile);
         let outf = File::open(outfile);
         Dd {
-            bs: bs,
-            count: count,
+            bs,
+            count,
             infile: inf.unwrap(),
             outfile: outf.unwrap(),
             ofs: Cell::new(0)}
@@ -48,7 +48,7 @@ impl Dd {
 }
 
 fn usage(opts: Options) {
-    let brief = format!("Usage: dd [options] <INFILE> <OUTFILE>");
+    let brief = "Usage: dd [options] <INFILE> <OUTFILE>";
     print!("{}", opts.usage(&brief));
 }
 
