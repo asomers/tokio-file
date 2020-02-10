@@ -179,15 +179,27 @@ impl Future for LioFut {
             })
         });
         let mut last_inner_result: Option<LioResult> = None;
+        let mut last_inner_ofs = 0;
         let iter = obuf_iter.map(move |mut obuf_ref| {
-            if let Some((buf_ref, mc)) = obuf_ref.take() {
+            if let Some((mut buf_ref, mc)) = obuf_ref.take() {
                 if mc {
                     last_inner_result = Some(inner_iter.next().unwrap());
+                    last_inner_ofs = 0;
                 }
                 let lir = last_inner_result.as_ref().unwrap();
                 if lir.value.is_ok() {
-                    let len = buf_ref.len().unwrap() as isize;
-                    LioResult{value: Ok(len), buf: buf_ref}
+                    let len = buf_ref.len().unwrap();
+                    if let BufRef::BoxedMutSlice(ref mut bms) = buf_ref {
+                        (**bms).borrow_mut().copy_from_slice(
+                            &match &lir.buf {
+                                BufRef::BoxedMutSlice(bms) => (**bms).borrow(),
+                                BufRef::BoxedSlice(bs) => (**bs).borrow(),
+                                BufRef::None => unreachable!()
+                            }[last_inner_ofs..(last_inner_ofs + len)]
+                        );
+                        last_inner_ofs += len;
+                    }
+                    LioResult{value: Ok(len as isize), buf: buf_ref}
                 } else {
                     let r = lir.value;
                     LioResult{value: r, buf: buf_ref}
