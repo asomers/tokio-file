@@ -325,8 +325,15 @@ test_suite! {
                 Box::new(dbs.try_mut().unwrap()) as Box<dyn BorrowMut<[u8]>>
             }).collect::<Vec<_>>();
             let mut rt = current_thread::Runtime::new().unwrap();
-            let file = t!(File::open(&path));
 
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .expect("open failed")
+                .write_all(&orig)
+                .expect("write failed");
+
+            let file = t!(File::open(&path));
             let mut ri = rt.block_on(lazy(|| {
                 file.readv_at(rbufs, 0).expect("readv_at failed early")
             })).unwrap();
@@ -339,13 +346,13 @@ test_suite! {
             assert!(ri.next().is_none());
             drop(file);
 
-            assert_eq!(&vec![0u8; 100][..], &orig[0..100]);
-            assert_eq!(&vec![1u8; 412][..], &orig[100..512]);
-            assert_eq!(&vec![2u8; 512][..], &orig[512..1024]);
-            assert_eq!(&vec![3u8; 100][..], &orig[1024..1124]);
-            assert_eq!(&vec![4u8; 100][..], &orig[1124..1224]);
-            assert_eq!(&vec![5u8; 312][..], &orig[1224..1536]);
-            assert_eq!(&vec![6u8; 512][..], &orig[1536..2048]);
+            assert_eq!(&dbses[0].try_const().unwrap()[..], &orig[0..100]);
+            assert_eq!(&dbses[1].try_const().unwrap()[..], &orig[100..512]);
+            assert_eq!(&dbses[2].try_const().unwrap()[..], &orig[512..1024]);
+            assert_eq!(&dbses[3].try_const().unwrap()[..], &orig[1024..1124]);
+            assert_eq!(&dbses[4].try_const().unwrap()[..], &orig[1124..1224]);
+            assert_eq!(&dbses[5].try_const().unwrap()[..], &orig[1224..1536]);
+            assert_eq!(&dbses[6].try_const().unwrap()[..], &orig[1536..2048]);
         } else {
             println!("This test requires root privileges");
         }
