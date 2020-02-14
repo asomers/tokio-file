@@ -1,4 +1,4 @@
-## [Unreleased] - ReleaseDate
+## [0.5.2] - 2020-02-13
 ### Fixed
 - Fixed `readv_at` on device nodes with unaligned buffers
   (#[13](https://github.com/asomers/tokio-file/pull/13))
