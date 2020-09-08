@@ -2,7 +2,7 @@ extern crate divbuf;
 #[macro_use] extern crate galvanic_test;
 extern crate nix;
 extern crate futures;
-extern crate tempdir;
+extern crate tempfile;
 extern crate tokio;
 extern crate tokio_file;
 
@@ -15,7 +15,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::Command;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use tokio_file::File;
 use tokio::runtime::current_thread;
 
@@ -29,7 +29,7 @@ macro_rules! t {
 #[test]
 fn metadata() {
     let wbuf = vec![0; 9000].into_boxed_slice();
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("read_at");
     let mut f = t!(fs::File::create(&path));
     f.write_all(&wbuf).expect("write failed");
@@ -40,7 +40,7 @@ fn metadata() {
 
 #[test]
 fn len() {
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("read_at");
     let f = t!(fs::File::create(&path));
     f.set_len(9000).unwrap();
@@ -53,7 +53,7 @@ fn len() {
 /// specified.
 #[test]
 fn new_nocreat() {
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("nonexistent");
     let r = fs::OpenOptions::new()
         .read(true)
@@ -72,7 +72,7 @@ fn read_at() {
     let rbuf = Box::new(dbs.try_mut().unwrap());
     let off = 2;
 
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("read_at_divbuf_mut");
     let mut f = t!(fs::File::create(&path));
     f.write_all(WBUF).expect("write failed");
@@ -101,7 +101,7 @@ fn readv_at() {
     let rbufs : Vec<Box<dyn BorrowMut<[u8]>>> = vec![rbuf0, rbuf1];
     let off = 2;
 
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("readv_at");
     let mut f = t!(fs::File::create(&path));
     f.write_all(WBUF).expect("write failed");
@@ -128,7 +128,7 @@ fn readv_at() {
 fn sync_all() {
     const WBUF: &[u8] = b"abcdef";
 
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("sync_all");
     let mut f = t!(fs::File::create(&path));
     f.write_all(WBUF).expect("write failed");
@@ -146,7 +146,7 @@ fn write_at() {
     let wbuf = Box::new(dbs.try_const().unwrap());
     let mut rbuf = Vec::new();
 
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("write_at");
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();
@@ -171,7 +171,7 @@ fn writev_at() {
     let wbufs : Vec<Box<dyn Borrow<[u8]>>> = vec![wbuf0, wbuf1];
     let mut rbuf = Vec::new();
 
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at");
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();
@@ -203,7 +203,7 @@ fn write_at_static() {
     let wbuf = Box::new(WBUF);
     let mut rbuf = Vec::new();
 
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("write_at");
     {
         let file = t!(File::open(&path));
@@ -230,7 +230,7 @@ fn writev_at_static() {
     let wbufs : Vec<Box<dyn Borrow<[u8]>>> = vec![wbuf0, wbuf1];
     let mut rbuf = Vec::new();
 
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at_static");
     let file = t!(File::open(&path));
     let mut rt = current_thread::Runtime::new().unwrap();

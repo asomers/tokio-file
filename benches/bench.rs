@@ -2,7 +2,7 @@
 
 extern crate divbuf;
 extern crate futures;
-extern crate tempdir;
+extern crate tempfile;
 extern crate tokio;
 extern crate tokio_file;
 extern crate test;
@@ -14,7 +14,7 @@ use std::io::Write;
 use std::os::unix::fs::FileExt;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use test::Bencher;
 use tokio::runtime::current_thread::Runtime;
 use tokio_file::File;
@@ -24,7 +24,7 @@ const FLEN: usize = 1<<19;
 #[bench]
 fn bench_aio_read(bench: &mut Bencher) {
     // First prep the test file
-    let dir = TempDir::new("tokio-file").unwrap();
+    let dir = TempDir::new().unwrap();
     let path = dir.path().join("aio_read");
     let mut f = fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
@@ -51,7 +51,7 @@ fn bench_aio_read(bench: &mut Bencher) {
 #[bench]
 fn bench_threaded_read(bench: &mut Bencher) {
     // First prep the test file
-    let dir = TempDir::new("tokio-file").unwrap();
+    let dir = TempDir::new().unwrap();
     let path = dir.path().join("threaded_read");
     let mut f = fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
@@ -91,7 +91,7 @@ struct TpOpspec {
 #[bench]
 fn bench_threadpool_read(bench: &mut Bencher) {
     // First prep the test file
-    let dir = TempDir::new("tokio-file").unwrap();
+    let dir = TempDir::new().unwrap();
     let path = dir.path().join("threadpool_read");
     let mut f = fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];

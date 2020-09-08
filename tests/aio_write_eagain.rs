@@ -2,14 +2,14 @@ extern crate divbuf;
 extern crate futures;
 extern crate nix;
 extern crate sysctl;
-extern crate tempdir;
+extern crate tempfile;
 extern crate tokio;
 extern crate tokio_file;
 
 use divbuf::DivBufShared;
 use futures::future::lazy;
 use futures::{Future, future};
-use tempdir::TempDir;
+use tempfile::TempDir;
 use tokio_file::{AioResult, File};
 use tokio::runtime::current_thread;
 
@@ -31,7 +31,7 @@ fn write_at_eagain() {
         panic!("sysctl: {:?}", limit);
     };
 
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("write_at_eagain.0");
     let file = t!(File::open(&path));
 

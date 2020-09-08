@@ -11,14 +11,14 @@
 //! use std::borrow::Borrow;
 //! use std::fs;
 //! use std::io::Read;
-//! use tempdir::TempDir;
+//! use tempfile::TempDir;
 //! use tokio::runtime::current_thread;
 //!
 //! let contents = b"abcdef";
 //! let wbuf: Box<Borrow<[u8]>> = Box::new(&contents[..]);
 //! let mut rbuf = Vec::new();
 //!
-//! let dir = TempDir::new("tokio-file").unwrap();
+//! let dir = TempDir::new().unwrap();
 //! let path = dir.path().join("foo");
 //! let file = fs::OpenOptions::new()
 //!     .create(true)

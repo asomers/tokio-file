@@ -25,7 +25,7 @@ futures = "0.1"
 galvanic-test = "0.1.5"
 getopts = "0.2"
 sysctl = "0.1"
-tempdir = "0.3"
+tempfile = "3.0"
 tokio = "0.1.6"
 
 [[test]]

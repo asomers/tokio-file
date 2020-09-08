@@ -2,7 +2,7 @@ extern crate divbuf;
 extern crate futures;
 extern crate nix;
 extern crate sysctl;
-extern crate tempdir;
+extern crate tempfile;
 extern crate tokio;
 extern crate tokio_file;
 
@@ -11,7 +11,7 @@ use futures::future;
 use nix::unistd::{SysconfVar, sysconf};
 use std::borrow::Borrow;
 use sysctl::CtlValue;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use tokio_file::File;
 use tokio::runtime::current_thread;
 
@@ -53,7 +53,7 @@ fn writev_at_eio() {
         panic!("Can't find a configuration for max_aio_queue_per_proc={} AIO_LISTIO_MAX={}", maqpp, alm);
     }
 
-    let dir = t!(TempDir::new("tokio-file"));
+    let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at_eio");
     let file = t!(File::open(&path));
     let dbses: Vec<_> = (0..num_listios).map(|_| {
