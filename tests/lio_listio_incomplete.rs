@@ -1,11 +1,3 @@
-extern crate divbuf;
-extern crate futures;
-extern crate nix;
-extern crate sysctl;
-extern crate tempfile;
-extern crate tokio;
-extern crate tokio_file;
-
 use divbuf::DivBufShared;
 use futures::future;
 use nix::unistd::{SysconfVar, sysconf};
