@@ -317,13 +317,13 @@ impl File {
     /// use std::borrow::BorrowMut;
     /// use std::fs;
     /// use std::io::Write;
-    /// use tempdir::TempDir;
+    /// use tempfile::TempDir;
     /// use tokio::runtime::current_thread;
     ///
     /// const WBUF: &[u8] = b"abcdef";
     /// const EXPECT: &[u8] = b"cdef";
     /// let rbuf = Box::new(vec![0; 4].into_boxed_slice());
-    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let dir = TempDir::new().unwrap();
     /// let path = dir.path().join("foo");
     /// let mut f = fs::File::create(&path).unwrap();
     /// f.write(WBUF).unwrap();
@@ -386,7 +386,7 @@ impl File {
     /// use std::borrow::BorrowMut;
     /// use std::fs;
     /// use std::io::Write;
-    /// use tempdir::TempDir;
+    /// use tempfile::TempDir;
     /// use tokio::runtime::current_thread;
     ///
     /// const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
@@ -396,7 +396,7 @@ impl File {
     /// let rbuf1 = Box::new(vec![0; 8].into_boxed_slice());
     /// let rbufs : Vec<Box<dyn BorrowMut<[u8]>>> = vec![rbuf0, rbuf1];
     ///
-    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let dir = TempDir::new().unwrap();
     /// let path = dir.path().join("foo");
     /// let mut f = fs::File::create(&path).unwrap();
     /// f.write(WBUF).unwrap();
@@ -496,14 +496,14 @@ impl File {
     /// use std::borrow::Borrow;
     /// use std::fs;
     /// use std::io::Read;
-    /// use tempdir::TempDir;
+    /// use tempfile::TempDir;
     /// use tokio::runtime::current_thread;
     ///
     /// let contents = b"abcdef";
     /// let wbuf: Box<dyn Borrow<[u8]>> = Box::new(&contents[..]);
     /// let mut rbuf = Vec::new();
     ///
-    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let dir = TempDir::new().unwrap();
     /// let path = dir.path().join("foo");
     /// let file = fs::OpenOptions::new()
     ///     .create(true)
@@ -562,7 +562,7 @@ impl File {
     /// use std::borrow::Borrow;
     /// use std::fs;
     /// use std::io::Read;
-    /// use tempdir::TempDir;
+    /// use tempfile::TempDir;
     /// use tokio::runtime::current_thread;
     ///
     /// const EXPECT: &[u8] = b"abcdefghij";
@@ -571,7 +571,7 @@ impl File {
     /// let wbufs : Vec<Box<dyn Borrow<[u8]>>> = vec![wbuf0, wbuf1];
     /// let mut rbuf = Vec::new();
     ///
-    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let dir = TempDir::new().unwrap();
     /// let path = dir.path().join("foo");
     /// let file = fs::OpenOptions::new()
     ///     .create(true)
@@ -674,10 +674,10 @@ impl File {
     /// use std::borrow::BorrowMut;
     /// use std::fs;
     /// use std::io::Write;
-    /// use tempdir::TempDir;
+    /// use tempfile::TempDir;
     /// use tokio::runtime::current_thread;
     ///
-    /// let dir = TempDir::new("tokio-file").unwrap();
+    /// let dir = TempDir::new().unwrap();
     /// let path = dir.path().join("foo");
     ///
     /// let file = fs::OpenOptions::new()
