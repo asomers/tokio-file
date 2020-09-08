@@ -1,10 +1,5 @@
 #![feature(test)]
 
-extern crate divbuf;
-extern crate futures;
-extern crate tempfile;
-extern crate tokio;
-extern crate tokio_file;
 extern crate test;
 
 use divbuf::{DivBufMut, DivBufShared};

@@ -1,13 +1,6 @@
-extern crate divbuf;
-#[macro_use] extern crate galvanic_test;
-extern crate nix;
-extern crate futures;
-extern crate tempfile;
-extern crate tokio;
-extern crate tokio_file;
-
 use divbuf::DivBufShared;
 use futures::future::lazy;
+use galvanic_test::*;
 use nix::unistd::Uid;
 use std::borrow::{Borrow, BorrowMut};
 use std::ffi::OsStr;

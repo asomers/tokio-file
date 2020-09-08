@@ -22,7 +22,7 @@ tokio-reactor = "0.1.6"
 [dev-dependencies]
 divbuf = "0.3.1"
 futures = "0.1"
-galvanic-test = "0.1.5"
+galvanic-test = "0.2.0"
 getopts = "0.2"
 sysctl = "0.1"
 tempfile = "3.0"

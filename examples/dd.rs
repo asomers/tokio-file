@@ -7,12 +7,6 @@
 //!     cargo run --example dd -- -b 4096 -c 100 /tmp/infile /tmp/outfile
 //!     cmp /tmp/infile /tmp/outfile
 
-extern crate divbuf;
-extern crate futures;
-extern crate getopts;
-extern crate tokio;
-extern crate tokio_file;
-
 use divbuf::DivBufShared;
 use futures::future::Future;
 use futures::future::lazy;
