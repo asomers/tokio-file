@@ -12,6 +12,11 @@ Asynchronous file I/O for Tokio
 categories = ["asynchronous", "filesystem"]
 documentation = "https://asomers.github.io/tokio-file/tokio_file/"
 
+[package.metadata.docs.rs]
+targets = [
+  "x86_64-unknown-freebsd",
+]
+
 [dependencies]
 futures = "0.3.0"
 mio = "0.6.13"

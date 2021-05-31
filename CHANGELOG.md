@@ -3,6 +3,7 @@
 - Updated to Future 0.3, `std::future`, and Tokio 0.2.  Now tokio-file's
   futures can be used with async/await.  All methods now use borrowed buffers
   rather than owned buffers.
+  (#[15](https://github.com/asomers/tokio-file/pull/15))
 
 ## [0.5.2] - 2020-02-13
 ### Fixed

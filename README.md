@@ -6,15 +6,15 @@ mixed with all other Future types within the Tokio reactor.
 [![Build Status](https://api.cirrus-ci.com/github/asomers/tokio-file.svg)](https://cirrus-ci.com/github/asomers/tokio-file)
 [![Crates.io](https://img.shields.io/crates/v/tokio-file.svg)](https://crates.io/crates/tokio-file)
 
-[Documentation](https://asomers.github.io/tokio-file/tokio_file/index.html)
+[Documentation](https://docs.rs/crate/tokio-file)
 
 [tokio]: https://github.com/tokio-rs/tokio-core
 
 ```toml
 # Cargo.toml
 [depdendencies]
-tokio = "0.1.6"
-tokio-file = "0.5.0"
+tokio = "0.2.0"
+tokio-file = "0.6.0"
 ```
 
 # Usage
@@ -25,7 +25,7 @@ running the resulting futures in the tokio reactor.
 
 # Platforms
 
-`tokio-file` version 0.3 works on FreeBSD, using the `mio-aio` crate..  It will
+`tokio-file` version 0.6 works on FreeBSD, using the `mio-aio` crate..  It will
 probably also work on DragonflyBSD and OSX.  It does not work on Linux.  The
 `tokio-file` API can be supported on Linux, but it will need a completely
 different backend.  Instead of using POSIX AIO as `mio-aio` does, Linux will
