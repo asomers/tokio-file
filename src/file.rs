@@ -66,10 +66,10 @@ impl<'a> AioFut<'a> {
     #[doc(hidden)]
     fn aio_return(&mut self) -> Result<Option<isize>, nix::Error> {
         match self.op {
-            AioOp::Fsync(ref io) =>
-                io.get_ref().aio_return().map(|_| None),
-            AioOp::Read(ref io) | AioOp::Write(ref io) =>
-                io.get_ref().aio_return().map(Some),
+            AioOp::Fsync(ref mut io) =>
+                io.get_mut().aio_return().map(|_| None),
+            AioOp::Read(ref mut io) | AioOp::Write(ref mut io) =>
+                io.get_mut().aio_return().map(Some),
         }
     }
 }
@@ -712,10 +712,10 @@ impl<'a> Future for AioFut<'a> {
         if !poll_result.is_ready() {
             if self.state == AioState::Allocated {
                 let r = match self.op {
-                    AioOp::Fsync(ref pe) => pe.get_ref()
+                    AioOp::Fsync(ref mut pe) => pe.get_mut()
                         .fsync(mio_aio::AioFsyncMode::O_SYNC),
-                    AioOp::Read(ref pe) => pe.get_ref().read(),
-                    AioOp::Write(ref pe) => pe.get_ref().write(),
+                    AioOp::Read(ref mut pe) => pe.get_mut().read(),
+                    AioOp::Write(ref mut pe) => pe.get_mut().write(),
                 };
                 if let Err(e) = r {
                     return Poll::Ready(Err(e));
