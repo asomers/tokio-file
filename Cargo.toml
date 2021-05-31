@@ -15,8 +15,8 @@ documentation = "https://asomers.github.io/tokio-file/tokio_file/"
 [dependencies]
 futures = "0.3.0"
 mio = "0.6.13"
-nix = { git = "https://github.com/asomers/nix", rev = "7912d9cfb10ea3a8118f00eb5a40790cdea33c8d" }
-mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "7096fa18b8400ba014a43be9fdc6f913263e70fa" }
+nix = "0.21.0"
+mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "c4a4b6a2faa9fdff3c98e5079b33a5af90737ac7" }
 tokio = { version = "0.2.0", features = [ "io-driver" ] }
 
 [dev-dependencies]
