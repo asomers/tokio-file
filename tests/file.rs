@@ -72,7 +72,7 @@ fn read_at() {
     }).unwrap();
     assert_eq!(r.value.unwrap() as usize, EXPECT.len());
 
-    assert_eq!(&rbuf[..], &EXPECT[..]);
+    assert_eq!(&rbuf[..], EXPECT);
 }
 
 #[test]
@@ -99,8 +99,8 @@ fn readv_at() {
         assert_eq!(12, r);
     }
 
-    assert_eq!(&rbuf0[..], &EXPECT0[..]);
-    assert_eq!(&rbuf1[..], &EXPECT1[..]);
+    assert_eq!(&rbuf0[..], EXPECT0);
+    assert_eq!(&rbuf1[..], EXPECT1);
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn writev_at_static() {
     const EXPECT: &[u8] = b"abcdefghi";
     const WBUF0: &[u8] = b"abcdef";
     const WBUF1: &[u8] = b"ghi";
-    let wbufs = [&WBUF0[..], &WBUF1[..]];
+    let wbufs = [WBUF0, WBUF1];
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new());

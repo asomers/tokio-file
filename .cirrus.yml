@@ -49,4 +49,7 @@ task:
     - . $HOME/.cargo/env
     - cargo +$VERSION update -Zminimal-versions
     - cargo +$VERSION check --all-targets
+  clippy_script:
+    - . $HOME/.cargo/env
+    - cargo +$VERSION clippy --all-features --all-targets -- -D warnings
   before_cache_script: rm -rf $HOME/.cargo/registry/index

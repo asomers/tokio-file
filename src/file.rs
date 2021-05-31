@@ -84,6 +84,7 @@ pub struct AioResult {
 
 /// The return value of [`readv_at`]
 #[must_use = "futures do nothing unless polled"]
+#[allow(clippy::type_complexity)]
 pub struct ReadvAt<'a> {
     op: Option<PollEvented<mio_aio::LioCb<'a>>>,
     /// If needed, bufsav.0 combines [`readv_at`]'s argument slices into a
