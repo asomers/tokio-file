@@ -3,6 +3,9 @@ freebsd_instance:
 
 task:
   name: cargo test
+  env:
+    # Temporary workaround for https://github.com/rust-lang/rustup/issues/2774
+    RUSTUP_IO_THREADS: 1
   # Record some info about the test environment
   sysinfo_script:
     - mount
@@ -23,3 +26,8 @@ task:
     - cargo +nightly test --all-targets
     # Also run tests with sudo, because some need it for mdconfig
     - sudo -E cargo test --tests
+  # Test our minimal version spec
+  minver_test_script:
+    - . $HOME/.cargo/env
+    - cargo +nightly update -Zminimal-versions
+    - cargo +nightly check --all-targets

@@ -1,3 +1,9 @@
+## [Unreleased] - ReleaseDate
+### Changed
+- Updated to Future 0.3, `std::future`, and Tokio 0.2.  Now tokio-file's
+  futures can be used with async/await.  All methods now use borrowed buffers
+  rather than owned buffers.
+
 ## [0.5.2] - 2020-02-13
 ### Fixed
 - Fixed `readv_at` on device nodes with unaligned buffers

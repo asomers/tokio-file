@@ -1,8 +1,5 @@
-use divbuf::DivBufShared;
-use futures::future::lazy;
 use galvanic_test::*;
 use nix::unistd::Uid;
-use std::borrow::{Borrow, BorrowMut};
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{Read, Write};
@@ -10,7 +7,7 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 use tokio_file::File;
-use tokio::runtime::current_thread;
+use tokio::runtime;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -23,7 +20,7 @@ macro_rules! t {
 fn metadata() {
     let wbuf = vec![0; 9000].into_boxed_slice();
     let dir = t!(TempDir::new());
-    let path = dir.path().join("read_at");
+    let path = dir.path().join("metadata");
     let mut f = t!(fs::File::create(&path));
     f.write_all(&wbuf).expect("write failed");
     let file = t!(File::open(&path));
@@ -34,7 +31,7 @@ fn metadata() {
 #[test]
 fn len() {
     let dir = t!(TempDir::new());
-    let path = dir.path().join("read_at");
+    let path = dir.path().join("len");
     let f = t!(fs::File::create(&path));
     f.set_len(9000).unwrap();
     let file = t!(File::open(&path));
@@ -61,25 +58,21 @@ fn new_nocreat() {
 fn read_at() {
     const WBUF: &[u8] = b"abcdef";
     const EXPECT: &[u8] = b"cdef";
-    let dbs = DivBufShared::from(vec![0; 4]);
-    let rbuf = Box::new(dbs.try_mut().unwrap());
+    let mut rbuf = vec![0; 4];
     let off = 2;
 
     let dir = t!(TempDir::new());
-    let path = dir.path().join("read_at_divbuf_mut");
+    let path = dir.path().join("read_at");
     let mut f = t!(fs::File::create(&path));
     f.write_all(WBUF).expect("write failed");
     let file = t!(File::open(&path));
-    let mut rt = current_thread::Runtime::new().unwrap();
-    let r = t!(rt.block_on(lazy(|| {
-        file.read_at(rbuf, off).expect("read_at failed early")
-    })));
+    let mut rt = runtime::Runtime::new().unwrap();
+    let r = rt.block_on(async {
+        file.read_at(&mut rbuf[..], off).expect("read_at failed early").await
+    }).unwrap();
     assert_eq!(r.value.unwrap() as usize, EXPECT.len());
 
-    let mut buf_ref = r.into_buf_ref();
-    let borrowed : &mut dyn BorrowMut<[u8]> = buf_ref.boxed_mut_slice()
-                                                     .unwrap();
-    assert_eq!(&borrowed.borrow_mut()[..], &EXPECT[..]);
+    assert_eq!(&rbuf[..], &EXPECT[..]);
 }
 
 #[test]
@@ -87,34 +80,27 @@ fn readv_at() {
     const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
     const EXPECT0: &[u8] = b"cdef";
     const EXPECT1: &[u8] = b"ghijklmn";
-    let dbs0 = DivBufShared::from(vec![0; 4]);
-    let rbuf0 = Box::new(dbs0.try_mut().unwrap());
-    let dbs1 = DivBufShared::from(vec![0; 8]);
-    let rbuf1 = Box::new(dbs1.try_mut().unwrap());
-    let rbufs : Vec<Box<dyn BorrowMut<[u8]>>> = vec![rbuf0, rbuf1];
-    let off = 2;
+    let mut rbuf0 = vec![0; 4];
+    let mut rbuf1 = vec![0; 8];
+    {
+        let mut rbufs = [&mut rbuf0[..], &mut rbuf1[..]];
+        let off = 2;
 
-    let dir = t!(TempDir::new());
-    let path = dir.path().join("readv_at");
-    let mut f = t!(fs::File::create(&path));
-    f.write_all(WBUF).expect("write failed");
-    let file = t!(File::open(&path));
-    let mut rt = current_thread::Runtime::new().unwrap();
-    let mut ri = t!(rt.block_on(lazy(|| {
-        file.readv_at(rbufs, off).expect("readv_at failed early")
-    })));
+        let dir = t!(TempDir::new());
+        let path = dir.path().join("readv_at");
+        let mut f = t!(fs::File::create(&path));
+        f.write_all(WBUF).expect("write failed");
+        let file = t!(File::open(&path));
+        let mut rt = runtime::Runtime::new().unwrap();
+        let r = rt.block_on(async {
+            file.readv_at(&mut rbufs[..], off).expect("readv_at failed early")
+                .await
+        }).unwrap();
+        assert_eq!(12, r);
+    }
 
-    let mut r0 = ri.next().unwrap();
-    assert_eq!(r0.value.unwrap() as usize, EXPECT0.len());
-    let b0 : &mut dyn BorrowMut<[u8]> = r0.buf.boxed_mut_slice().unwrap();
-    assert_eq!(&b0.borrow_mut()[..], &EXPECT0[..]);
-
-    let mut r1 = ri.next().unwrap();
-    assert_eq!(r1.value.unwrap() as usize, EXPECT1.len());
-    let b1 : &mut dyn BorrowMut<[u8]> = r1.buf.boxed_mut_slice().unwrap();
-    assert_eq!(&b1.borrow_mut()[..], &EXPECT1[..]);
-
-    assert!(ri.next().is_none());
+    assert_eq!(&rbuf0[..], &EXPECT0[..]);
+    assert_eq!(&rbuf1[..], &EXPECT1[..]);
 }
 
 #[test]
@@ -126,26 +112,25 @@ fn sync_all() {
     let mut f = t!(fs::File::create(&path));
     f.write_all(WBUF).expect("write failed");
     let file = t!(File::open(&path));
-    let mut rt = current_thread::Runtime::new().unwrap();
-    let r = t!(rt.block_on(lazy(|| {
-        file.sync_all().expect("sync_all failed early")
-    })));
+    let mut rt = runtime::Runtime::new().unwrap();
+    let r = rt.block_on(async {
+        file.sync_all().expect("sync_all failed early").await
+    }).unwrap();
     assert!(r.value.is_none());
 }
 
 #[test]
 fn write_at() {
-    let dbs = DivBufShared::from(&b"abcdef"[..]);
-    let wbuf = Box::new(dbs.try_const().unwrap());
+    let wbuf = b"abcdef";
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new());
     let path = dir.path().join("write_at");
     let file = t!(File::open(&path));
-    let mut rt = current_thread::Runtime::new().unwrap();
-    let r = t!(rt.block_on(lazy(|| {
-        file.write_at(wbuf.clone(), 0).expect("write_at failed early")
-    })));
+    let mut rt = runtime::Runtime::new().unwrap();
+    let r = rt.block_on(async {
+        file.write_at(wbuf, 0).expect("write_at failed early").await
+    }).unwrap();
     assert_eq!(r.value.unwrap() as usize, wbuf.len());
 
     let mut f = t!(fs::File::open(&path));
@@ -157,32 +142,19 @@ fn write_at() {
 #[test]
 fn writev_at() {
     const EXPECT: &[u8] = b"abcdefghij";
-    let dbs0 = DivBufShared::from(&b"abcdef"[..]);
-    let wbuf0 = Box::new(dbs0.try_const().unwrap());
-    let dbs1 = DivBufShared::from(&b"ghij"[..]);
-    let wbuf1 = Box::new(dbs1.try_const().unwrap());
-    let wbufs : Vec<Box<dyn Borrow<[u8]>>> = vec![wbuf0, wbuf1];
+    let wbuf0 = b"abcdef";
+    let wbuf1 = b"ghij";
+    let wbufs = [&wbuf0[..], &wbuf1[..]];
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at");
     let file = t!(File::open(&path));
-    let mut rt = current_thread::Runtime::new().unwrap();
-    let mut wi = t!(rt.block_on(lazy(|| {
-        file.writev_at(wbufs, 0).expect("writev_at failed early")
-    })));
-
-    let w0 = wi.next().unwrap();
-    assert_eq!(w0.value.unwrap() as usize, dbs0.len());
-    let b0 : &dyn Borrow<[u8]> = w0.buf.boxed_slice().unwrap();
-    assert_eq!(&dbs0.try_const().unwrap()[..], b0.borrow());
-
-    let w1 = wi.next().unwrap();
-    assert_eq!(w1.value.unwrap() as usize, dbs1.len());
-    let b1 : &dyn Borrow<[u8]> = w1.buf.boxed_slice().unwrap();
-    assert_eq!(&dbs1.try_const().unwrap()[..], b1.borrow());
-
-    assert!(wi.next().is_none());
+    let mut rt = runtime::Runtime::new().unwrap();
+    let r = rt.block_on(async {
+        file.writev_at(&wbufs[..], 0).expect("writev_at failed early").await
+    }).unwrap();
+    assert_eq!(r, wbuf0.len() + wbuf1.len());
 
     let mut f = t!(fs::File::open(&path));
     let len = t!(f.read_to_end(&mut rbuf));
@@ -193,17 +165,16 @@ fn writev_at() {
 #[test]
 fn write_at_static() {
     const WBUF: &[u8] = b"abcdef";
-    let wbuf = Box::new(WBUF);
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new());
     let path = dir.path().join("write_at");
     {
         let file = t!(File::open(&path));
-        let mut rt = current_thread::Runtime::new().unwrap();
-        let r = t!(rt.block_on(lazy(|| {
-            file.write_at(wbuf, 0).expect("write_at failed early")
-        })));
+        let mut rt = runtime::Runtime::new().unwrap();
+        let r = rt.block_on(async {
+            file.write_at(WBUF, 0).expect("write_at failed early").await
+        }).unwrap();
         assert_eq!(r.value.unwrap() as usize, WBUF.len());
     }
 
@@ -218,26 +189,17 @@ fn writev_at_static() {
     const EXPECT: &[u8] = b"abcdefghi";
     const WBUF0: &[u8] = b"abcdef";
     const WBUF1: &[u8] = b"ghi";
-    let wbuf0 = Box::new(WBUF0);
-    let wbuf1 = Box::new(WBUF1);
-    let wbufs : Vec<Box<dyn Borrow<[u8]>>> = vec![wbuf0, wbuf1];
+    let wbufs = [&WBUF0[..], &WBUF1[..]];
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at_static");
     let file = t!(File::open(&path));
-    let mut rt = current_thread::Runtime::new().unwrap();
-    let mut wi = t!(rt.block_on(lazy(|| {
-        file.writev_at(wbufs, 0).expect("writev_at failed early")
-    })));
-
-    let w0 = wi.next().unwrap();
-    assert_eq!(w0.value.unwrap() as usize, WBUF0.len());
-
-    let w1 = wi.next().unwrap();
-    assert_eq!(w1.value.unwrap() as usize, WBUF1.len());
-
-    assert!(wi.next().is_none());
+    let mut rt = runtime::Runtime::new().unwrap();
+    let r = rt.block_on(async {
+        file.writev_at(&wbufs[..], 0).expect("writev_at failed early").await
+    }).unwrap();
+    assert_eq!(r, WBUF0.len() + WBUF1.len());
 
     let mut f = t!(fs::File::open(&path));
     let len = t!(f.read_to_end(&mut rbuf));
@@ -305,19 +267,16 @@ test_suite! {
             orig[1124..1224].copy_from_slice(&[4u8; 100]);
             orig[1224..1536].copy_from_slice(&[5u8; 312]);
             orig[1536..2048].copy_from_slice(&[6u8; 512]);
-            let dbses = [
-                DivBufShared::from(vec![0u8; 100]),
-                DivBufShared::from(vec![0u8; 412]),
-                DivBufShared::from(vec![0u8; 512]),
-                DivBufShared::from(vec![0u8; 100]),
-                DivBufShared::from(vec![0u8; 100]),
-                DivBufShared::from(vec![0u8; 312]),
-                DivBufShared::from(vec![0u8; 512]),
+            let mut rbufs = [
+                vec![0u8; 100],
+                vec![0u8; 412],
+                vec![0u8; 512],
+                vec![0u8; 100],
+                vec![0u8; 100],
+                vec![0u8; 312],
+                vec![0u8; 512],
             ];
-            let rbufs = dbses.iter().map(|dbs| {
-                Box::new(dbs.try_mut().unwrap()) as Box<dyn BorrowMut<[u8]>>
-            }).collect::<Vec<_>>();
-            let mut rt = current_thread::Runtime::new().unwrap();
+            let mut rt = runtime::Runtime::new().unwrap();
 
             fs::OpenOptions::new()
                 .write(true)
@@ -326,26 +285,26 @@ test_suite! {
                 .write_all(&orig)
                 .expect("write failed");
 
-            let file = t!(File::open(&path));
-            let mut ri = rt.block_on(lazy(|| {
-                file.readv_at(rbufs, 0).expect("readv_at failed early")
-            })).unwrap();
-
-            for dbs in dbses.iter() {
-                let rr = ri.next().unwrap();
-                assert_eq!(rr.value.unwrap() as usize, dbs.len());
+            {
+                let file = t!(File::open(&path));
+                let mut rslices = rbufs.iter_mut()
+                    .map(|b| b.as_mut())
+                    .collect::<Vec<_>>();
+                let r = rt.block_on(async {
+                    file.readv_at(&mut rslices[..], 0)
+                        .expect("readv_at failed early")
+                        .await
+                }).unwrap();
+                assert_eq!(2048, r);
             }
 
-            assert!(ri.next().is_none());
-            drop(file);
-
-            assert_eq!(&dbses[0].try_const().unwrap()[..], &orig[0..100]);
-            assert_eq!(&dbses[1].try_const().unwrap()[..], &orig[100..512]);
-            assert_eq!(&dbses[2].try_const().unwrap()[..], &orig[512..1024]);
-            assert_eq!(&dbses[3].try_const().unwrap()[..], &orig[1024..1124]);
-            assert_eq!(&dbses[4].try_const().unwrap()[..], &orig[1124..1224]);
-            assert_eq!(&dbses[5].try_const().unwrap()[..], &orig[1224..1536]);
-            assert_eq!(&dbses[6].try_const().unwrap()[..], &orig[1536..2048]);
+            assert_eq!(&rbufs[0][..], &orig[0..100]);
+            assert_eq!(&rbufs[1][..], &orig[100..512]);
+            assert_eq!(&rbufs[2][..], &orig[512..1024]);
+            assert_eq!(&rbufs[3][..], &orig[1024..1124]);
+            assert_eq!(&rbufs[4][..], &orig[1124..1224]);
+            assert_eq!(&rbufs[5][..], &orig[1224..1536]);
+            assert_eq!(&rbufs[6][..], &orig[1536..2048]);
         } else {
             println!("This test requires root privileges");
         }
@@ -354,46 +313,36 @@ test_suite! {
     // writev with unaligned buffers
     test writev_at(md) {
         if let Some(path) = md.val {
-            let dbses = [
-                DivBufShared::from(vec![0u8; 100]),
-                DivBufShared::from(vec![1u8; 412]),
-                DivBufShared::from(vec![2u8; 512]),
-                DivBufShared::from(vec![3u8; 100]),
-                DivBufShared::from(vec![4u8; 100]),
-                DivBufShared::from(vec![5u8; 312]),
-                DivBufShared::from(vec![6u8; 512]),
+            let wbufs = [
+                &vec![0u8; 100][..],
+                &vec![1u8; 412][..],
+                &vec![2u8; 512][..],
+                &vec![3u8; 100][..],
+                &vec![4u8; 100][..],
+                &vec![5u8; 312][..],
+                &vec![6u8; 512][..],
             ];
-            let wbufs = dbses.iter().map(|dbs| {
-                Box::new(dbs.try_const().unwrap()) as Box<dyn Borrow<[u8]>>
-            }).collect::<Vec<_>>();
-            let mut rt = current_thread::Runtime::new().unwrap();
+            let mut rt = runtime::Runtime::new().unwrap();
             let file = t!(File::open(&path));
 
-            let mut wi = rt.block_on(lazy(|| {
-                file.writev_at(wbufs, 0).expect("writev_at failed early")
-            })).unwrap();
+            let r = rt.block_on(async {
+                file.writev_at(&wbufs[..], 0).expect("writev_at failed early")
+                    .await
+            }).unwrap();
+            assert_eq!(r, 2048);
 
-            for dbs in dbses.iter() {
-                let wbuf = dbs.try_const().unwrap();
-                let wr = wi.next().unwrap();
-                assert_eq!(wr.value.unwrap() as usize, wbuf.len());
-                let b : &dyn Borrow<[u8]> = wr.buf.boxed_slice().unwrap();
-                assert_eq!(&wbuf[..], b.borrow());
-            }
-
-            assert!(wi.next().is_none());
             drop(file);
 
             let mut f = fs::File::open(&path).unwrap();
             let mut rbuf = vec![0u8; 2048];
             t!(f.read_exact(&mut rbuf));
-            assert_eq!(&vec![0u8; 100][..], &rbuf[0..100]);
-            assert_eq!(&vec![1u8; 412][..], &rbuf[100..512]);
-            assert_eq!(&vec![2u8; 512][..], &rbuf[512..1024]);
-            assert_eq!(&vec![3u8; 100][..], &rbuf[1024..1124]);
-            assert_eq!(&vec![4u8; 100][..], &rbuf[1124..1224]);
-            assert_eq!(&vec![5u8; 312][..], &rbuf[1224..1536]);
-            assert_eq!(&vec![6u8; 512][..], &rbuf[1536..2048]);
+            assert_eq!(wbufs[0], &rbuf[0..100]);
+            assert_eq!(wbufs[1], &rbuf[100..512]);
+            assert_eq!(wbufs[2], &rbuf[512..1024]);
+            assert_eq!(wbufs[3], &rbuf[1024..1124]);
+            assert_eq!(wbufs[4], &rbuf[1124..1224]);
+            assert_eq!(wbufs[5], &rbuf[1224..1536]);
+            assert_eq!(wbufs[6], &rbuf[1536..2048]);
         } else {
             println!("This test requires root privileges");
         }
