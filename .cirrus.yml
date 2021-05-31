@@ -3,6 +3,9 @@ freebsd_instance:
 
 task:
   name: cargo test
+  env:
+    # Temporary workaround for https://github.com/rust-lang/rustup/issues/2774
+    RUSTUP_IO_THREADS: 1
   # Record some info about the test environment
   sysinfo_script:
     - mount
