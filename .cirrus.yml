@@ -1,9 +1,9 @@
 freebsd_instance:
-  image: freebsd-11-3-stable-amd64-v20190801
+  image: freebsd-11-4-release-amd64
 
-task:
-  name: cargo test
+setup: &SETUP
   env:
+    HOME: /tmp # cargo cache needs it
     # Temporary workaround for https://github.com/rust-lang/rustup/issues/2774
     RUSTUP_IO_THREADS: 1
   # Record some info about the test environment
@@ -12,22 +12,41 @@ task:
     - df -h
     - sysctl hw.model hw.ncpu hw.physmem
     - freebsd-version
-  # Install Rust
   setup_script:
     - fetch https://sh.rustup.rs -o rustup.sh
     - sh rustup.sh -y
-    - $HOME/.cargo/bin/rustup toolchain install nightly
-    # In 11.3, aio on ufs is considered unsafe
+    - $HOME/.cargo/bin/rustup toolchain install $VERSION
+    # In 11.4, aio on ufs is considered unsafe
     - sysctl vfs.aio.enable_unsafe=1
+  cargo_cache:
+    folder: $HOME/.cargo/registry
+    fingerprint_script: cat Cargo.lock || echo ""
+
+task:
+  name: FreeBSD 11.4 MSRV
+  env:
+    VERSION: 1.41.0
+  << : *SETUP
   test_script:
     - . $HOME/.cargo/env
-    - cargo test
-    # Also test on nightly, to run the benchmarks
-    - cargo +nightly test --all-targets
+    - cargo +$VERSION test
+    # Also run tests with sudo, because some need it for mdconfig
+    - sudo -E cargo test --tests
+  before_cache_script: rm -rf $HOME/.cargo/registry/index
+
+task:
+  name: FreeBSD 11.4 nightly
+  env:
+    VERSION: nightly
+  << : *SETUP
+  test_script:
+    - . $HOME/.cargo/env
+    - cargo +$VERSION test --all-targets
     # Also run tests with sudo, because some need it for mdconfig
     - sudo -E cargo test --tests
   # Test our minimal version spec
   minver_test_script:
     - . $HOME/.cargo/env
-    - cargo +nightly update -Zminimal-versions
-    - cargo +nightly check --all-targets
+    - cargo +$VERSION update -Zminimal-versions
+    - cargo +$VERSION check --all-targets
+  before_cache_script: rm -rf $HOME/.cargo/registry/index
