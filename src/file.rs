@@ -5,6 +5,7 @@ use futures::{
 };
 use mio::unix::UnixReady;
 pub use mio_aio::LioError;
+use nix::errno::Errno;
 use tokio::io::PollEvented;
 use std::{fs, io, mem};
 use std::os::unix::fs::FileTypeExt;
@@ -24,6 +25,37 @@ nix::ioctl_read! {
 
 nix::ioctl_read! {
     diocgstripesize, 'd', 139, nix::libc::off_t
+}
+
+fn conv_poll_err<T>(e: io::Error) -> Poll<Result<T, nix::Error>> {
+    let raw = e.raw_os_error().unwrap_or(0);
+    let errno = Errno::from_i32(raw);
+    Poll::Ready(Err(nix::Error::from_errno(errno)))
+}
+
+macro_rules! lio_resubmit {
+    ($self: ident, $cx: expr) => {
+        {
+            // Some requests must've completed; now issue the rest.
+            let result = $self.op.as_mut().unwrap().get_mut().resubmit();
+            $self.op
+                .as_mut()
+                .unwrap()
+                .clear_read_ready($cx, UnixReady::lio().into())
+                .unwrap();
+            match result {
+                Ok(()) => {
+                    $self.state = AioState::InProgress;
+                    Poll::Pending
+                },
+                Err(LioError::EINCOMPLETE) => Poll::Pending,
+                Err(LioError::EAGAIN) =>
+                    Poll::Ready(Err(nix::Error::Sys(Errno::EAGAIN))),
+                Err(LioError::EIO(_)) =>
+                    Poll::Ready(Err(nix::Error::Sys(Errno::EIO))),
+            }
+        }
+    }
 }
 
 // LCOV_EXCL_START
@@ -114,6 +146,7 @@ impl<'a> Future for ReadvAt<'a> {
                               .unwrap()
                               .poll_read_ready(cx, UnixReady::lio().into());
         if let AioState::Allocated = self.state {
+            assert!(poll_result.is_pending());
             let result = self.op.as_mut().unwrap().get_mut().submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
@@ -123,65 +156,53 @@ impl<'a> Future for ReadvAt<'a> {
                     self.state = AioState::Incomplete;
                 },
                 Err(LioError::EAGAIN) =>
-                    return Poll::Ready(Err(nix::Error::Sys(nix::errno::Errno::EAGAIN))),
+                    return Poll::Ready(Err(nix::Error::Sys(Errno::EAGAIN))),
                 Err(LioError::EIO(_)) => {
-                    return Poll::Ready(Err(nix::Error::Sys(nix::errno::Errno::EIO)))
+                    return Poll::Ready(Err(nix::Error::Sys(Errno::EIO)))
                 },
             }
         }
-        if !poll_result.is_ready() {
-            return Poll::Pending;
-        }
-        if AioState::Incomplete == self.state {
-            // Some requests must've completed; now issue the rest.
-            let result = self.op.as_mut().unwrap().get_mut().resubmit();
-            self.op
-                .as_mut()
-                .unwrap()
-                .clear_read_ready(cx, UnixReady::lio().into())
-                .unwrap();
-            match result {
-                Ok(()) => {
-                    self.state = AioState::InProgress;
-                    return Poll::Pending;
-                },
-                Err(LioError::EINCOMPLETE) => {
-                    return Poll::Pending;
-                },
-                Err(LioError::EAGAIN) =>
-                    return Poll::Ready(Err(nix::Error::Sys(nix::errno::Errno::EAGAIN))),
-                Err(LioError::EIO(_)) =>
-                    return Poll::Ready(Err(nix::Error::Sys(nix::errno::Errno::EIO))),
-            }
-        }
-        let r = self.op.take()
-            .unwrap()
-            .into_inner().unwrap()
-            .into_results(|mut iter|
-                iter.try_fold(0, |total, lr|
-                    lr.result.map(|r| total + r as usize)
-                )
-            );
-        if let Ok(v) = r {
-            if let Some((accum, ob)) = &mut self.bufsav  {
-                // Copy results back into the individual buffers
-                let mut i = 0;
-                let mut j = 0;
-                let mut total = 0;
-                while total < v {
-                    let z = (v - total).min(ob[i].len() - j);
-                    ob[i][j..j + z].copy_from_slice(&accum[total..total + z]);
-                    j += z;
-                    total += z;
-                    if j == ob[i].len() {
-                        j = 0;
-                        i += 1;
+        match poll_result {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Err(e)) => conv_poll_err(e),
+            Poll::Ready(Ok(ready)) => {
+                assert_eq!(UnixReady::from(ready), UnixReady::lio());
+                if AioState::Incomplete == self.state {
+                    lio_resubmit!(self, cx)
+                } else {
+                    let r = self.op.take()
+                        .unwrap()
+                        .into_inner().unwrap()
+                        .into_results(|mut iter|
+                            iter.try_fold(0, |total, lr|
+                                lr.result.map(|r| total + r as usize)
+                            )
+                        );
+                    if let Ok(v) = r {
+                        if let Some((accum, ob)) = &mut self.bufsav  {
+                            // Copy results back into the individual buffers
+                            let mut i = 0;
+                            let mut j = 0;
+                            let mut total = 0;
+                            while total < v {
+                                let z = (v - total).min(ob[i].len() - j);
+                                ob[i][j..j + z]
+                                    .copy_from_slice(&accum[total..total + z]);
+                                j += z;
+                                total += z;
+                                if j == ob[i].len() {
+                                    j = 0;
+                                    i += 1;
+                                }
+                            }
+                        }
                     }
+                    Poll::Ready(r)
+
                 }
             }
         }
-        Poll::Ready(r)
-}
+    }
 }
 
 impl<'a> Future for WritevAt<'a> {
@@ -193,6 +214,7 @@ impl<'a> Future for WritevAt<'a> {
                               .unwrap()
                               .poll_read_ready(cx, UnixReady::lio().into());
         if let AioState::Allocated = self.state {
+            assert!(poll_result.is_pending());
             let result = self.op.as_mut().unwrap().get_mut().submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
@@ -202,46 +224,32 @@ impl<'a> Future for WritevAt<'a> {
                     self.state = AioState::Incomplete;
                 },
                 Err(LioError::EAGAIN) =>
-                    return Poll::Ready(Err(nix::Error::Sys(nix::errno::Errno::EAGAIN))),
+                    return Poll::Ready(Err(nix::Error::Sys(Errno::EAGAIN))),
                 Err(LioError::EIO(_)) => {
-                    return Poll::Ready(Err(nix::Error::Sys(nix::errno::Errno::EIO)))
+                    return Poll::Ready(Err(nix::Error::Sys(Errno::EIO)))
                 },
             }
         }
-        if !poll_result.is_ready() {
-            return Poll::Pending;
-        }
-        if AioState::Incomplete == self.state {
-            // Some requests must've completed; now issue the rest.
-            let result = self.op.as_mut().unwrap().get_mut().resubmit();
-            self.op
-                .as_mut()
-                .unwrap()
-                .clear_read_ready(cx, UnixReady::lio().into())
-                .unwrap();
-            match result {
-                Ok(()) => {
-                    self.state = AioState::InProgress;
-                    return Poll::Pending;
-                },
-                Err(LioError::EINCOMPLETE) => {
-                    return Poll::Pending;
-                },
-                Err(LioError::EAGAIN) =>
-                    return Poll::Ready(Err(nix::Error::Sys(nix::errno::Errno::EAGAIN))),
-                Err(LioError::EIO(_)) =>
-                    return Poll::Ready(Err(nix::Error::Sys(nix::errno::Errno::EIO))),
+        match poll_result {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Err(e)) => conv_poll_err(e),
+            Poll::Ready(Ok(ready)) => {
+                assert_eq!(UnixReady::from(ready), UnixReady::lio());
+                if AioState::Incomplete == self.state {
+                    lio_resubmit!(self, cx)
+                } else {
+                    let r = self.op.take()
+                        .unwrap()
+                        .into_inner().unwrap()
+                        .into_results(|mut iter|
+                            iter.try_fold(0, |total, lr|
+                                lr.result.map(|r| total + r as usize)
+                            )
+                        );
+                    Poll::Ready(r)
+                }
             }
         }
-        let r = self.op.take()
-            .unwrap()
-            .into_inner().unwrap()
-            .into_results(|mut iter|
-                iter.try_fold(0, |total, lr|
-                    lr.result.map(|r| total + r as usize)
-                )
-            );
-        Poll::Ready(r)
     }
 }
 
@@ -709,25 +717,31 @@ impl<'a> Future for AioFut<'a> {
                 AioOp::Write(ref mut io) =>
                     io.poll_read_ready(cx, UnixReady::aio().into()),
         };
-        if !poll_result.is_ready() {
-            if self.state == AioState::Allocated {
-                let r = match self.op {
-                    AioOp::Fsync(ref mut pe) => pe.get_mut()
-                        .fsync(mio_aio::AioFsyncMode::O_SYNC),
-                    AioOp::Read(ref mut pe) => pe.get_mut().read(),
-                    AioOp::Write(ref mut pe) => pe.get_mut().write(),
-                };
-                if let Err(e) = r {
-                    return Poll::Ready(Err(e));
+        match poll_result {
+            Poll::Pending => {
+                if self.state == AioState::Allocated {
+                    let r = match self.op {
+                        AioOp::Fsync(ref mut pe) => pe.get_mut()
+                            .fsync(mio_aio::AioFsyncMode::O_SYNC),
+                        AioOp::Read(ref mut pe) => pe.get_mut().read(),
+                        AioOp::Write(ref mut pe) => pe.get_mut().write(),
+                    };
+                    if let Err(e) = r {
+                        return Poll::Ready(Err(e));
+                    }
+                    self.state = AioState::InProgress;
                 }
-                self.state = AioState::InProgress;
+                Poll::Pending
+            },
+            Poll::Ready(Err(e)) => conv_poll_err(e),
+            Poll::Ready(Ok(ready)) => {
+                assert_eq!(UnixReady::from(ready), UnixReady::aio());
+                let result = self.aio_return();
+                match result {
+                    Ok(x) => Poll::Ready(Ok(AioResult{value: x})),
+                    Err(x) => Poll::Ready(Err(x))
+                }
             }
-            return Poll::Pending;
-        }
-        let result = self.aio_return();
-        match result {
-            Ok(x) => Poll::Ready(Ok(AioResult{value: x})),
-            Err(x) => Poll::Ready(Err(x))
         }
     }
 }
