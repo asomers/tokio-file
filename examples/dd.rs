@@ -40,7 +40,7 @@ impl Dd {
 
 fn usage(opts: Options) {
     let brief = "Usage: dd [options] <INFILE> <OUTFILE>";
-    print!("{}", opts.usage(&brief));
+    print!("{}", opts.usage(brief));
 }
 
 
