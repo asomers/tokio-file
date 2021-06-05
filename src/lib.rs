@@ -11,7 +11,7 @@
 //! use std::fs;
 //! use std::io::Read;
 //! use tempfile::TempDir;
-//! use tokio::runtime::Runtime;
+//! use tokio::runtime;
 //!
 //! let contents = b"abcdef";
 //! let mut rbuf = Vec::new();
@@ -24,7 +24,10 @@
 //!     .open(&path)
 //!     .map(tokio_file::File::new)
 //!     .unwrap();
-//! let mut rt = Runtime::new().unwrap();
+//! let rt = runtime::Builder::new_current_thread()
+//!     .enable_io()
+//!     .build()
+//!     .unwrap();
 //! let r = rt.block_on(async {
 //!     file.write_at(contents, 0).unwrap().await
 //! }).unwrap();

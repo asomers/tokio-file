@@ -69,7 +69,10 @@ fn main() {
     let outfile = &matches.free[1];
 
     let dd = Rc::new(Dd::new(infile.as_str(), outfile.as_str(), bs, count));
-    let mut rt = runtime::Runtime::new().unwrap();
+    let rt = runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
     // Note: this simple example will fail if infile isn't big enough.  A
     // robust program would use try_for_each instead of for_each so it can
     // exit early.

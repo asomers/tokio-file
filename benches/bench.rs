@@ -10,10 +10,17 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use tempfile::TempDir;
 use test::Bencher;
-use tokio::runtime::Runtime;
+use tokio::runtime::{self, Runtime};
 use tokio_file::File;
 
 const FLEN: usize = 1<<19;
+
+fn runtime() -> Runtime {
+    runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap()
+}
 
 #[bench]
 fn bench_aio_read(bench: &mut Bencher) {
@@ -25,7 +32,7 @@ fn bench_aio_read(bench: &mut Bencher) {
     f.write_all(&wbuf).expect("write failed");
 
     // Prep the reactor
-    let mut runtime = Runtime::new().unwrap();
+    let runtime = runtime();
     let file = File::open(path).unwrap();
 
     let mut rbuf = vec![0u8; FLEN];
@@ -50,7 +57,7 @@ fn bench_threaded_read(bench: &mut Bencher) {
     f.write_all(&wbuf).expect("write failed");
 
     // Prep the reactor
-    let mut runtime = Runtime::new().unwrap();
+    let runtime = runtime();
     let file = Arc::new(Mutex::new(fs::File::open(&path).unwrap()));
 
     bench.iter(move || {
@@ -106,7 +113,7 @@ fn bench_threadpool_read(bench: &mut Bencher) {
     });
 
     // Prep the reactor
-    let mut runtime = Runtime::new().unwrap();
+    let runtime = runtime();
     let file = Arc::new(Mutex::new(fs::File::open(&path).unwrap()));
     let ptxclone = ptx.clone();
 
