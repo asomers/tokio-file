@@ -3,9 +3,9 @@ use futures::{
     Future,
     task::{Context, Poll}
 };
-use mio::unix::UnixReady;
 pub use mio_aio::LioError;
 use nix::errno::Errno;
+use tokio::io::Interest;
 use tokio::io::PollEvented;
 use std::{fs, io, mem};
 use std::os::unix::fs::FileTypeExt;
@@ -34,15 +34,14 @@ fn conv_poll_err<T>(e: io::Error) -> Poll<Result<T, nix::Error>> {
 }
 
 macro_rules! lio_resubmit {
-    ($self: ident, $cx: expr) => {
+    ($self: ident, $ev: expr) => {
         {
             // Some requests must've completed; now issue the rest.
-            let result = $self.op.as_mut().unwrap().get_mut().resubmit();
+            let result = (*$self.op.as_mut().unwrap()).resubmit();
             $self.op
                 .as_mut()
                 .unwrap()
-                .clear_read_ready($cx, UnixReady::lio().into())
-                .unwrap();
+                .clear_read_ready($ev);
             match result {
                 Ok(()) => {
                     $self.state = AioState::InProgress;
@@ -99,9 +98,9 @@ impl<'a> AioFut<'a> {
     fn aio_return(&mut self) -> Result<Option<isize>, nix::Error> {
         match self.op {
             AioOp::Fsync(ref mut io) =>
-                io.get_mut().aio_return().map(|_| None),
+                (*io).aio_return().map(|_| None),
             AioOp::Read(ref mut io) | AioOp::Write(ref mut io) =>
-                io.get_mut().aio_return().map(Some),
+                (*io).aio_return().map(Some),
         }
     }
 }
@@ -144,10 +143,10 @@ impl<'a> Future for ReadvAt<'a> {
         let poll_result = self.op
                               .as_mut()
                               .unwrap()
-                              .poll_read_ready(cx, UnixReady::lio().into());
+                              .poll_read_ready(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
-            let result = self.op.as_mut().unwrap().get_mut().submit();
+            let result = (*self.op.as_mut().unwrap()).submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
                 Err(LioError::EINCOMPLETE) => {
@@ -165,10 +164,9 @@ impl<'a> Future for ReadvAt<'a> {
         match poll_result {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Err(e)) => conv_poll_err(e),
-            Poll::Ready(Ok(ready)) => {
-                assert_eq!(UnixReady::from(ready), UnixReady::lio());
+            Poll::Ready(Ok(ev)) => {
                 if AioState::Incomplete == self.state {
-                    lio_resubmit!(self, cx)
+                    lio_resubmit!(self, ev)
                 } else {
                     let r = self.op.take()
                         .unwrap()
@@ -198,7 +196,6 @@ impl<'a> Future for ReadvAt<'a> {
                         }
                     }
                     Poll::Ready(r)
-
                 }
             }
         }
@@ -212,10 +209,10 @@ impl<'a> Future for WritevAt<'a> {
         let poll_result = self.op
                               .as_mut()
                               .unwrap()
-                              .poll_read_ready(cx, UnixReady::lio().into());
+                              .poll_read_ready(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
-            let result = self.op.as_mut().unwrap().get_mut().submit();
+            let result = (*self.op.as_mut().unwrap()).submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
                 Err(LioError::EINCOMPLETE) => {
@@ -233,10 +230,9 @@ impl<'a> Future for WritevAt<'a> {
         match poll_result {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Err(e)) => conv_poll_err(e),
-            Poll::Ready(Ok(ready)) => {
-                assert_eq!(UnixReady::from(ready), UnixReady::lio());
+            Poll::Ready(Ok(ev)) => {
                 if AioState::Incomplete == self.state {
-                    lio_resubmit!(self, cx)
+                    lio_resubmit!(self, ev)
                 } else {
                     let r = self.op.take()
                         .unwrap()
@@ -353,7 +349,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Write;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// const WBUF: &[u8] = b"abcdef";
     /// const EXPECT: &[u8] = b"cdef";
@@ -368,7 +364,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let r = rt.block_on(async {
     ///     file.read_at(&mut rbuf[..], 2).unwrap().await
     /// }).unwrap();
@@ -382,7 +381,7 @@ impl File {
                             buf,
                             0,  //priority
                             mio_aio::LioOpcode::LIO_NOP);
-        PollEvented::new(aiocb)
+        PollEvented::new_with_interest(aiocb, Interest::AIO)
         .map(|pe| AioFut {
             op: AioOp::Read(pe),
             state: AioState::Allocated
@@ -421,7 +420,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Write;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
     /// const EXPECT0: &[u8] = b"cdef";
@@ -442,7 +441,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let mut r = rt.block_on(async {
     ///     file.readv_at(&mut rbufs[..], 2).unwrap().await
     /// }).unwrap();
@@ -495,7 +497,7 @@ impl File {
             }
         }
         let liocb = builder.finish();
-        PollEvented::new(liocb)
+        PollEvented::new_with_interest(liocb, Interest::LIO)
         .map(|pe| ReadvAt {
             op: Some(pe),
             bufsav,
@@ -513,7 +515,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Read;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// let contents = b"abcdef";
     /// let mut rbuf = Vec::new();
@@ -526,7 +528,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let r = rt.block_on(async {
     ///     file.write_at(contents, 0).unwrap().await
     /// }).unwrap();
@@ -543,7 +548,7 @@ impl File {
         let fd = self.file.as_raw_fd();
         let aiocb = mio_aio::AioCb::from_slice(fd, offset, buf, 0,
             mio_aio::LioOpcode::LIO_NOP);
-        PollEvented::new(aiocb)
+        PollEvented::new_with_interest(aiocb, Interest::AIO)
         .map(|pe| AioFut{
             op: AioOp::Write(pe),
             state: AioState::Allocated
@@ -580,7 +585,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Read;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// const EXPECT: &[u8] = b"abcdefghij";
     /// let wbuf0 = b"abcdef";
@@ -596,7 +601,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let r = rt.block_on(async {
     ///     file.writev_at(&wbufs[..], 0).unwrap().await
     /// }).unwrap();
@@ -651,7 +659,7 @@ impl File {
             }
         }
         let liocb = builder.finish();
-        PollEvented::new(liocb)
+        PollEvented::new_with_interest(liocb, Interest::LIO)
         .map(|pe| 
              WritevAt {
                 _accumulator: accumulator,
@@ -670,7 +678,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Write;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// let dir = TempDir::new().unwrap();
     /// let path = dir.path().join("foo");
@@ -681,7 +689,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let r = rt.block_on(async {
     ///     file.sync_all().unwrap().await
     /// }).unwrap();
@@ -691,7 +702,7 @@ impl File {
         let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
                             0,  //priority
                             );
-        PollEvented::new(aiocb)
+        PollEvented::new_with_interest(aiocb, Interest::AIO)
         .map(|pe| AioFut{
             op: AioOp::Fsync(pe),
             state: AioState::Allocated
@@ -711,20 +722,20 @@ impl<'a> Future for AioFut<'a> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let poll_result = match self.op {
                 AioOp::Fsync(ref mut io) =>
-                    io.poll_read_ready(cx, UnixReady::aio().into()),
+                    io.poll_read_ready(cx),
                 AioOp::Read(ref mut io) =>
-                    io.poll_read_ready(cx, UnixReady::aio().into()),
+                    io.poll_read_ready(cx),
                 AioOp::Write(ref mut io) =>
-                    io.poll_read_ready(cx, UnixReady::aio().into()),
+                    io.poll_read_ready(cx),
         };
         match poll_result {
             Poll::Pending => {
                 if self.state == AioState::Allocated {
                     let r = match self.op {
-                        AioOp::Fsync(ref mut pe) => pe.get_mut()
+                        AioOp::Fsync(ref mut pe) => (*pe)
                             .fsync(mio_aio::AioFsyncMode::O_SYNC),
-                        AioOp::Read(ref mut pe) => pe.get_mut().read(),
-                        AioOp::Write(ref mut pe) => pe.get_mut().write(),
+                        AioOp::Read(ref mut pe) => (*pe).read(),
+                        AioOp::Write(ref mut pe) => (*pe).write(),
                     };
                     if let Err(e) = r {
                         return Poll::Ready(Err(e));
@@ -734,8 +745,7 @@ impl<'a> Future for AioFut<'a> {
                 Poll::Pending
             },
             Poll::Ready(Err(e)) => conv_poll_err(e),
-            Poll::Ready(Ok(ready)) => {
-                assert_eq!(UnixReady::from(ready), UnixReady::aio());
+            Poll::Ready(Ok(_ev)) => {
                 let result = self.aio_return();
                 match result {
                     Ok(x) => Poll::Ready(Ok(AioResult{value: x})),

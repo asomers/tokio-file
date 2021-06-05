@@ -48,7 +48,11 @@ fn writev_at_eio() {
     let file = t!(File::open(&path));
     let wbuf = vec![0u8; 4096];
 
-    let mut rt = runtime::Runtime::new().unwrap();
+    let rt = runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+
     let wi = rt.block_on(async {
         let futs = (0..num_listios).map(|i| {
             let mut wbufs = Vec::with_capacity(ops_per_listio);

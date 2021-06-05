@@ -21,15 +21,15 @@ targets = [
 futures = "0.3.0"
 mio = "0.6.13"
 nix = "0.21.0"
-mio-aio = "0.5.0"
-tokio = { version = "0.2.0", features = [ "io-driver" ] }
+mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "f0a68b53003436db30cd96480a9fcd9c410affb7" }
+tokio = { git = "https://github.com/asomers/tokio", rev = "458f9ce4834c5c157cee59d97b95595dac41078c", features = [ "aio" ] }
 
 [dev-dependencies]
 galvanic-test = "0.2.0"
 getopts = "0.2.18"
 sysctl = "0.1"
 tempfile = "3.0"
-tokio = { version = "0.2.0", features = [ "rt-core" ] }
+tokio = { git = "https://github.com/asomers/tokio", rev = "458f9ce4834c5c157cee59d97b95595dac41078c", features = [ "aio" , "rt" ] }
 
 [[test]]
 name = "functional"

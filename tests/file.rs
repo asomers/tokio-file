@@ -7,13 +7,20 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 use tokio_file::File;
-use tokio::runtime;
+use tokio::runtime::{self, Runtime};
 
 macro_rules! t {
     ($e:expr) => (match $e {
         Ok(e) => e,
         Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
     })
+}
+
+fn runtime() -> Runtime {
+    runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap()
 }
 
 #[test]
@@ -66,7 +73,7 @@ fn read_at() {
     let mut f = t!(fs::File::create(&path));
     f.write_all(WBUF).expect("write failed");
     let file = t!(File::open(&path));
-    let mut rt = runtime::Runtime::new().unwrap();
+    let rt = runtime();
     let r = rt.block_on(async {
         file.read_at(&mut rbuf[..], off).expect("read_at failed early").await
     }).unwrap();
@@ -91,7 +98,7 @@ fn readv_at() {
         let mut f = t!(fs::File::create(&path));
         f.write_all(WBUF).expect("write failed");
         let file = t!(File::open(&path));
-        let mut rt = runtime::Runtime::new().unwrap();
+        let rt = runtime();
         let r = rt.block_on(async {
             file.readv_at(&mut rbufs[..], off).expect("readv_at failed early")
                 .await
@@ -112,7 +119,7 @@ fn sync_all() {
     let mut f = t!(fs::File::create(&path));
     f.write_all(WBUF).expect("write failed");
     let file = t!(File::open(&path));
-    let mut rt = runtime::Runtime::new().unwrap();
+    let rt = runtime();
     let r = rt.block_on(async {
         file.sync_all().expect("sync_all failed early").await
     }).unwrap();
@@ -127,7 +134,7 @@ fn write_at() {
     let dir = t!(TempDir::new());
     let path = dir.path().join("write_at");
     let file = t!(File::open(&path));
-    let mut rt = runtime::Runtime::new().unwrap();
+    let rt = runtime();
     let r = rt.block_on(async {
         file.write_at(wbuf, 0).expect("write_at failed early").await
     }).unwrap();
@@ -150,7 +157,7 @@ fn writev_at() {
     let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at");
     let file = t!(File::open(&path));
-    let mut rt = runtime::Runtime::new().unwrap();
+    let rt = runtime();
     let r = rt.block_on(async {
         file.writev_at(&wbufs[..], 0).expect("writev_at failed early").await
     }).unwrap();
@@ -171,7 +178,7 @@ fn write_at_static() {
     let path = dir.path().join("write_at");
     {
         let file = t!(File::open(&path));
-        let mut rt = runtime::Runtime::new().unwrap();
+        let rt = runtime();
         let r = rt.block_on(async {
             file.write_at(WBUF, 0).expect("write_at failed early").await
         }).unwrap();
@@ -195,7 +202,7 @@ fn writev_at_static() {
     let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at_static");
     let file = t!(File::open(&path));
-    let mut rt = runtime::Runtime::new().unwrap();
+    let rt = runtime();
     let r = rt.block_on(async {
         file.writev_at(&wbufs[..], 0).expect("writev_at failed early").await
     }).unwrap();
@@ -276,7 +283,7 @@ test_suite! {
                 vec![0u8; 312],
                 vec![0u8; 512],
             ];
-            let mut rt = runtime::Runtime::new().unwrap();
+            let rt = runtime();
 
             fs::OpenOptions::new()
                 .write(true)
@@ -322,7 +329,7 @@ test_suite! {
                 &vec![5u8; 312][..],
                 &vec![6u8; 512][..],
             ];
-            let mut rt = runtime::Runtime::new().unwrap();
+            let rt = runtime();
             let file = t!(File::open(&path));
 
             let r = rt.block_on(async {
