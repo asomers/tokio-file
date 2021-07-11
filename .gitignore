@@ -1,2 +1,7 @@
+syntax: glob
+*.diff
+*.rej
+*.orig
+.*.sw?
 target
 Cargo.lock
