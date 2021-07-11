@@ -5,8 +5,7 @@ use futures::{
 };
 pub use mio_aio::LioError;
 use nix::errno::Errno;
-use tokio::io::Interest;
-use tokio::io::PollEvented;
+use tokio::io::PollAio;
 use std::{fs, io, mem};
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -41,7 +40,7 @@ macro_rules! lio_resubmit {
             $self.op
                 .as_mut()
                 .unwrap()
-                .clear_read_ready($ev);
+                .clear_ready($ev);
             match result {
                 Ok(()) => {
                     $self.state = AioState::InProgress;
@@ -60,9 +59,9 @@ macro_rules! lio_resubmit {
 // LCOV_EXCL_START
 #[derive(Debug)]
 enum AioOp<'a> {
-    Fsync(PollEvented<mio_aio::AioCb<'static>>),
-    Read(PollEvented<mio_aio::AioCb<'a>>),
-    Write(PollEvented<mio_aio::AioCb<'a>>),
+    Fsync(PollAio<mio_aio::AioCb<'static>>),
+    Read(PollAio<mio_aio::AioCb<'a>>),
+    Write(PollAio<mio_aio::AioCb<'a>>),
 }
 // LCOV_EXCL_STOP
 
@@ -117,7 +116,7 @@ pub struct AioResult {
 #[must_use = "futures do nothing unless polled"]
 #[allow(clippy::type_complexity)]
 pub struct ReadvAt<'a> {
-    op: Option<PollEvented<mio_aio::LioCb<'a>>>,
+    op: Option<PollAio<mio_aio::LioCb<'a>>>,
     /// If needed, bufsav.0 combines [`readv_at`]'s argument slices into a
     /// bigger slice that satisfies sectorsize requirements.  After completion,
     /// the data will be copied back to bufsav.1
@@ -128,7 +127,7 @@ pub struct ReadvAt<'a> {
 /// The return value of [`writev_at`]
 #[must_use = "futures do nothing unless polled"]
 pub struct WritevAt<'a> {
-    op: Option<PollEvented<mio_aio::LioCb<'a>>>,
+    op: Option<PollAio<mio_aio::LioCb<'a>>>,
     /// If needed, _accumulator combines [`writev_at`]'s argument slices into a
     /// bigger slice that satisfies sectorsize requirements, and owns the data
     /// for the lifetime of [`op`].
@@ -143,7 +142,7 @@ impl<'a> Future for ReadvAt<'a> {
         let poll_result = self.op
                               .as_mut()
                               .unwrap()
-                              .poll_read_ready(cx);
+                              .poll(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
             let result = (*self.op.as_mut().unwrap()).submit();
@@ -170,7 +169,7 @@ impl<'a> Future for ReadvAt<'a> {
                 } else {
                     let r = self.op.take()
                         .unwrap()
-                        .into_inner().unwrap()
+                        .into_inner()
                         .into_results(|mut iter|
                             iter.try_fold(0, |total, lr|
                                 lr.result.map(|r| total + r as usize)
@@ -209,7 +208,7 @@ impl<'a> Future for WritevAt<'a> {
         let poll_result = self.op
                               .as_mut()
                               .unwrap()
-                              .poll_read_ready(cx);
+                              .poll(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
             let result = (*self.op.as_mut().unwrap()).submit();
@@ -236,7 +235,7 @@ impl<'a> Future for WritevAt<'a> {
                 } else {
                     let r = self.op.take()
                         .unwrap()
-                        .into_inner().unwrap()
+                        .into_inner()
                         .into_results(|mut iter|
                             iter.try_fold(0, |total, lr|
                                 lr.result.map(|r| total + r as usize)
@@ -381,7 +380,7 @@ impl File {
                             buf,
                             0,  //priority
                             mio_aio::LioOpcode::LIO_NOP);
-        PollEvented::new_with_interest(aiocb, Interest::AIO)
+        PollAio::new_for_aio(aiocb)
         .map(|pe| AioFut {
             op: AioOp::Read(pe),
             state: AioState::Allocated
@@ -497,7 +496,7 @@ impl File {
             }
         }
         let liocb = builder.finish();
-        PollEvented::new_with_interest(liocb, Interest::LIO)
+        PollAio::new_for_lio(liocb)
         .map(|pe| ReadvAt {
             op: Some(pe),
             bufsav,
@@ -548,7 +547,7 @@ impl File {
         let fd = self.file.as_raw_fd();
         let aiocb = mio_aio::AioCb::from_slice(fd, offset, buf, 0,
             mio_aio::LioOpcode::LIO_NOP);
-        PollEvented::new_with_interest(aiocb, Interest::AIO)
+        PollAio::new_for_aio(aiocb)
         .map(|pe| AioFut{
             op: AioOp::Write(pe),
             state: AioState::Allocated
@@ -659,7 +658,7 @@ impl File {
             }
         }
         let liocb = builder.finish();
-        PollEvented::new_with_interest(liocb, Interest::LIO)
+        PollAio::new_for_lio(liocb)
         .map(|pe| 
              WritevAt {
                 _accumulator: accumulator,
@@ -702,7 +701,7 @@ impl File {
         let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
                             0,  //priority
                             );
-        PollEvented::new_with_interest(aiocb, Interest::AIO)
+        PollAio::new_for_aio(aiocb)
         .map(|pe| AioFut{
             op: AioOp::Fsync(pe),
             state: AioState::Allocated
@@ -722,11 +721,11 @@ impl<'a> Future for AioFut<'a> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let poll_result = match self.op {
                 AioOp::Fsync(ref mut io) =>
-                    io.poll_read_ready(cx),
+                    io.poll(cx),
                 AioOp::Read(ref mut io) =>
-                    io.poll_read_ready(cx),
+                    io.poll(cx),
                 AioOp::Write(ref mut io) =>
-                    io.poll_read_ready(cx),
+                    io.poll(cx),
         };
         match poll_result {
             Poll::Pending => {
