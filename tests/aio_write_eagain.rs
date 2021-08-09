@@ -43,7 +43,7 @@ fn write_at_eagain() {
                 n_ok += 1;
                 assert_eq!(aio_result.value.unwrap(), 4096);
             },
-            Err(nix::Error::Sys(nix::errno::Errno::EAGAIN)) => n_eagain += 1,
+            Err(nix::errno::Errno::EAGAIN) => n_eagain += 1,
             Err(e) => panic!("unexpected result {:?}", e)
         }
     }

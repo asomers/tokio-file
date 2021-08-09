@@ -30,7 +30,7 @@ nix::ioctl_read! {
 fn conv_poll_err<T>(e: io::Error) -> Poll<Result<T, nix::Error>> {
     let raw = e.raw_os_error().unwrap_or(0);
     let errno = Errno::from_i32(raw);
-    Poll::Ready(Err(nix::Error::from_errno(errno)))
+    Poll::Ready(Err(errno))
 }
 
 macro_rules! lio_resubmit {
@@ -50,9 +50,9 @@ macro_rules! lio_resubmit {
                 },
                 Err(LioError::EINCOMPLETE) => Poll::Pending,
                 Err(LioError::EAGAIN) =>
-                    Poll::Ready(Err(nix::Error::Sys(Errno::EAGAIN))),
+                    Poll::Ready(Err(Errno::EAGAIN)),
                 Err(LioError::EIO(_)) =>
-                    Poll::Ready(Err(nix::Error::Sys(Errno::EIO))),
+                    Poll::Ready(Err(Errno::EIO)),
             }
         }
     }
@@ -156,9 +156,9 @@ impl<'a> Future for ReadvAt<'a> {
                     self.state = AioState::Incomplete;
                 },
                 Err(LioError::EAGAIN) =>
-                    return Poll::Ready(Err(nix::Error::Sys(Errno::EAGAIN))),
+                    return Poll::Ready(Err(Errno::EAGAIN)),
                 Err(LioError::EIO(_)) => {
-                    return Poll::Ready(Err(nix::Error::Sys(Errno::EIO)))
+                    return Poll::Ready(Err(Errno::EIO))
                 },
             }
         }
@@ -224,9 +224,9 @@ impl<'a> Future for WritevAt<'a> {
                     self.state = AioState::Incomplete;
                 },
                 Err(LioError::EAGAIN) =>
-                    return Poll::Ready(Err(nix::Error::Sys(Errno::EAGAIN))),
+                    return Poll::Ready(Err(Errno::EAGAIN)),
                 Err(LioError::EIO(_)) => {
-                    return Poll::Ready(Err(nix::Error::Sys(Errno::EIO)))
+                    return Poll::Ready(Err(Errno::EIO))
                 },
             }
         }

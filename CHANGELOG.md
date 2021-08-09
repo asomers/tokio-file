@@ -1,3 +1,11 @@
+## [Unreleased] - ReleaseDate
+
+### Changed
+
+- Updated Nix to 0.22.0.  This changes tokio-file's error types, because we
+  reexport from Nix.
+  (#[21](https://github.com/asomers/tokio-file/pull/21))
+
 ## [0.6.0] - 2021-05-31
 ### Changed
 - Updated to Future 0.3, `std::future`, and Tokio 0.2.  Now tokio-file's
