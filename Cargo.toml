@@ -21,8 +21,8 @@ targets = [
 [dependencies]
 futures = "0.3.0"
 mio = "0.6.13"
-nix = "0.21.0"
-mio-aio = "0.5.0"
+nix = "0.22.0"
+mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "fceac1d"}
 tokio = { version = "0.2.0", features = [ "io-driver" ] }
 
 [dev-dependencies]
