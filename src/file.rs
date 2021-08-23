@@ -5,7 +5,7 @@ use futures::{
 };
 pub use mio_aio::LioError;
 use nix::errno::Errno;
-use tokio::io::PollAio;
+use tokio::io::{AioSource, PollAio};
 use std::{fs, io, mem};
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -36,7 +36,7 @@ macro_rules! lio_resubmit {
     ($self: ident, $ev: expr) => {
         {
             // Some requests must've completed; now issue the rest.
-            let result = (*$self.op.as_mut().unwrap()).resubmit();
+            let result = (*$self.op.as_mut().unwrap()).0.resubmit();
             $self.op
                 .as_mut()
                 .unwrap()
@@ -56,12 +56,40 @@ macro_rules! lio_resubmit {
     }
 }
 
+/// Must wrap the real mio::event::Source in order to implement AioSource, which
+/// exists because Tokio has a policy of not exposing any mio types in its
+/// public API.
+#[derive(Debug)]
+struct WrappedAioCb<'a>(mio_aio::AioCb<'a>);
+impl<'a> AioSource for WrappedAioCb<'a> {
+    fn register(&mut self, kq: RawFd, token: usize) {
+        self.0.register_raw(kq, token)
+    }
+    fn deregister(&mut self) {
+        self.0.deregister_raw()
+    }
+}
+
+/// Must wrap the real mio::event::Source in order to implement AioSource, which
+/// exists because Tokio has a policy of not exposing any mio types in its
+/// public API.
+#[derive(Debug)]
+struct WrappedLioCb<'a>(mio_aio::LioCb<'a>);
+impl<'a> AioSource for WrappedLioCb<'a> {
+    fn register(&mut self, kq: RawFd, token: usize) {
+        self.0.register_raw(kq, token)
+    }
+    fn deregister(&mut self) {
+        self.0.deregister_raw()
+    }
+}
+
 // LCOV_EXCL_START
 #[derive(Debug)]
 enum AioOp<'a> {
-    Fsync(PollAio<mio_aio::AioCb<'static>>),
-    Read(PollAio<mio_aio::AioCb<'a>>),
-    Write(PollAio<mio_aio::AioCb<'a>>),
+    Fsync(PollAio<WrappedAioCb<'static>>),
+    Read(PollAio<WrappedAioCb<'a>>),
+    Write(PollAio<WrappedAioCb<'a>>),
 }
 // LCOV_EXCL_STOP
 
@@ -97,9 +125,9 @@ impl<'a> AioFut<'a> {
     fn aio_return(&mut self) -> Result<Option<isize>, nix::Error> {
         match self.op {
             AioOp::Fsync(ref mut io) =>
-                (*io).aio_return().map(|_| None),
+                (*io).0.aio_return().map(|_| None),
             AioOp::Read(ref mut io) | AioOp::Write(ref mut io) =>
-                (*io).aio_return().map(Some),
+                (*io).0.aio_return().map(Some),
         }
     }
 }
@@ -116,7 +144,7 @@ pub struct AioResult {
 #[must_use = "futures do nothing unless polled"]
 #[allow(clippy::type_complexity)]
 pub struct ReadvAt<'a> {
-    op: Option<PollAio<mio_aio::LioCb<'a>>>,
+    op: Option<PollAio<WrappedLioCb<'a>>>,
     /// If needed, bufsav.0 combines [`readv_at`]'s argument slices into a
     /// bigger slice that satisfies sectorsize requirements.  After completion,
     /// the data will be copied back to bufsav.1
@@ -127,7 +155,7 @@ pub struct ReadvAt<'a> {
 /// The return value of [`writev_at`]
 #[must_use = "futures do nothing unless polled"]
 pub struct WritevAt<'a> {
-    op: Option<PollAio<mio_aio::LioCb<'a>>>,
+    op: Option<PollAio<WrappedLioCb<'a>>>,
     /// If needed, _accumulator combines [`writev_at`]'s argument slices into a
     /// bigger slice that satisfies sectorsize requirements, and owns the data
     /// for the lifetime of [`op`].
@@ -145,7 +173,7 @@ impl<'a> Future for ReadvAt<'a> {
                               .poll(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
-            let result = (*self.op.as_mut().unwrap()).submit();
+            let result = (*self.op.as_mut().unwrap()).0.submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
                 Err(LioError::EINCOMPLETE) => {
@@ -170,6 +198,7 @@ impl<'a> Future for ReadvAt<'a> {
                     let r = self.op.take()
                         .unwrap()
                         .into_inner()
+                        .0
                         .into_results(|mut iter|
                             iter.try_fold(0, |total, lr|
                                 lr.result.map(|r| total + r as usize)
@@ -211,7 +240,7 @@ impl<'a> Future for WritevAt<'a> {
                               .poll(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
-            let result = (*self.op.as_mut().unwrap()).submit();
+            let result = (*self.op.as_mut().unwrap()).0.submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
                 Err(LioError::EINCOMPLETE) => {
@@ -236,6 +265,7 @@ impl<'a> Future for WritevAt<'a> {
                     let r = self.op.take()
                         .unwrap()
                         .into_inner()
+                        .0
                         .into_results(|mut iter|
                             iter.try_fold(0, |total, lr|
                                 lr.result.map(|r| total + r as usize)
@@ -380,7 +410,8 @@ impl File {
                             buf,
                             0,  //priority
                             mio_aio::LioOpcode::LIO_NOP);
-        PollAio::new_for_aio(aiocb)
+        let source = WrappedAioCb(aiocb);
+        PollAio::new_for_aio(source)
         .map(|pe| AioFut {
             op: AioOp::Read(pe),
             state: AioState::Allocated
@@ -496,7 +527,8 @@ impl File {
             }
         }
         let liocb = builder.finish();
-        PollAio::new_for_lio(liocb)
+        let source = WrappedLioCb(liocb);
+        PollAio::new_for_lio(source)
         .map(|pe| ReadvAt {
             op: Some(pe),
             bufsav,
@@ -547,7 +579,8 @@ impl File {
         let fd = self.file.as_raw_fd();
         let aiocb = mio_aio::AioCb::from_slice(fd, offset, buf, 0,
             mio_aio::LioOpcode::LIO_NOP);
-        PollAio::new_for_aio(aiocb)
+        let source = WrappedAioCb(aiocb);
+        PollAio::new_for_aio(source)
         .map(|pe| AioFut{
             op: AioOp::Write(pe),
             state: AioState::Allocated
@@ -658,7 +691,8 @@ impl File {
             }
         }
         let liocb = builder.finish();
-        PollAio::new_for_lio(liocb)
+        let source = WrappedLioCb(liocb);
+        PollAio::new_for_lio(source)
         .map(|pe| 
              WritevAt {
                 _accumulator: accumulator,
@@ -701,7 +735,8 @@ impl File {
         let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
                             0,  //priority
                             );
-        PollAio::new_for_aio(aiocb)
+        let source = WrappedAioCb(aiocb);
+        PollAio::new_for_aio(source)
         .map(|pe| AioFut{
             op: AioOp::Fsync(pe),
             state: AioState::Allocated
@@ -731,10 +766,10 @@ impl<'a> Future for AioFut<'a> {
             Poll::Pending => {
                 if self.state == AioState::Allocated {
                     let r = match self.op {
-                        AioOp::Fsync(ref mut pe) => (*pe)
+                        AioOp::Fsync(ref mut pe) => (*pe).0
                             .fsync(mio_aio::AioFsyncMode::O_SYNC),
-                        AioOp::Read(ref mut pe) => (*pe).read(),
-                        AioOp::Write(ref mut pe) => (*pe).write(),
+                        AioOp::Read(ref mut pe) => (*pe).0.read(),
+                        AioOp::Write(ref mut pe) => (*pe).0.write(),
                     };
                     if let Err(e) = r {
                         return Poll::Ready(Err(e));
