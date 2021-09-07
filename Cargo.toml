@@ -23,14 +23,14 @@ futures = "0.3.0"
 mio = "0.7.0"
 nix = "0.22.0"
 mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "2f56696", features = ["tokio"] }
-tokio = { git = "https://github.com/asomers/tokio", rev = "0536be4", features = [ "aio" ] }
+tokio = { git = "https://github.com/asomers/tokio", rev = "668e725", features = [ "net" ] }
 
 [dev-dependencies]
 galvanic-test = "0.2.0"
 getopts = "0.2.18"
 sysctl = "0.1"
 tempfile = "3.0"
-tokio = { git = "https://github.com/asomers/tokio", rev = "0536be4", features = [ "aio", "rt" ] }
+tokio = { git = "https://github.com/asomers/tokio", rev = "668e725", features = [ "net", "rt" ] }
 
 [[test]]
 name = "functional"

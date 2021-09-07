@@ -5,7 +5,7 @@ use futures::{
 };
 pub use mio_aio::LioError;
 use nix::errno::Errno;
-use tokio::io::{AioSource, PollAio};
+use tokio::io::bsd::{AioSource, Aio};
 use std::{fs, io, mem};
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -87,9 +87,9 @@ impl<'a> AioSource for WrappedLioCb<'a> {
 // LCOV_EXCL_START
 #[derive(Debug)]
 enum AioOp<'a> {
-    Fsync(PollAio<WrappedAioCb<'static>>),
-    Read(PollAio<WrappedAioCb<'a>>),
-    Write(PollAio<WrappedAioCb<'a>>),
+    Fsync(Aio<WrappedAioCb<'static>>),
+    Read(Aio<WrappedAioCb<'a>>),
+    Write(Aio<WrappedAioCb<'a>>),
 }
 // LCOV_EXCL_STOP
 
@@ -144,7 +144,7 @@ pub struct AioResult {
 #[must_use = "futures do nothing unless polled"]
 #[allow(clippy::type_complexity)]
 pub struct ReadvAt<'a> {
-    op: Option<PollAio<WrappedLioCb<'a>>>,
+    op: Option<Aio<WrappedLioCb<'a>>>,
     /// If needed, bufsav.0 combines [`readv_at`]'s argument slices into a
     /// bigger slice that satisfies sectorsize requirements.  After completion,
     /// the data will be copied back to bufsav.1
@@ -155,7 +155,7 @@ pub struct ReadvAt<'a> {
 /// The return value of [`writev_at`]
 #[must_use = "futures do nothing unless polled"]
 pub struct WritevAt<'a> {
-    op: Option<PollAio<WrappedLioCb<'a>>>,
+    op: Option<Aio<WrappedLioCb<'a>>>,
     /// If needed, _accumulator combines [`writev_at`]'s argument slices into a
     /// bigger slice that satisfies sectorsize requirements, and owns the data
     /// for the lifetime of [`op`].
@@ -170,7 +170,7 @@ impl<'a> Future for ReadvAt<'a> {
         let poll_result = self.op
                               .as_mut()
                               .unwrap()
-                              .poll(cx);
+                              .poll_ready(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
             let result = (*self.op.as_mut().unwrap()).0.submit();
@@ -237,7 +237,7 @@ impl<'a> Future for WritevAt<'a> {
         let poll_result = self.op
                               .as_mut()
                               .unwrap()
-                              .poll(cx);
+                              .poll_ready(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
             let result = (*self.op.as_mut().unwrap()).0.submit();
@@ -411,7 +411,7 @@ impl File {
                             0,  //priority
                             mio_aio::LioOpcode::LIO_NOP);
         let source = WrappedAioCb(aiocb);
-        PollAio::new_for_aio(source)
+        Aio::new_for_aio(source)
         .map(|pe| AioFut {
             op: AioOp::Read(pe),
             state: AioState::Allocated
@@ -528,7 +528,7 @@ impl File {
         }
         let liocb = builder.finish();
         let source = WrappedLioCb(liocb);
-        PollAio::new_for_lio(source)
+        Aio::new_for_lio(source)
         .map(|pe| ReadvAt {
             op: Some(pe),
             bufsav,
@@ -580,7 +580,7 @@ impl File {
         let aiocb = mio_aio::AioCb::from_slice(fd, offset, buf, 0,
             mio_aio::LioOpcode::LIO_NOP);
         let source = WrappedAioCb(aiocb);
-        PollAio::new_for_aio(source)
+        Aio::new_for_aio(source)
         .map(|pe| AioFut{
             op: AioOp::Write(pe),
             state: AioState::Allocated
@@ -692,7 +692,7 @@ impl File {
         }
         let liocb = builder.finish();
         let source = WrappedLioCb(liocb);
-        PollAio::new_for_lio(source)
+        Aio::new_for_lio(source)
         .map(|pe| 
              WritevAt {
                 _accumulator: accumulator,
@@ -736,7 +736,7 @@ impl File {
                             0,  //priority
                             );
         let source = WrappedAioCb(aiocb);
-        PollAio::new_for_aio(source)
+        Aio::new_for_aio(source)
         .map(|pe| AioFut{
             op: AioOp::Fsync(pe),
             state: AioState::Allocated
@@ -756,11 +756,11 @@ impl<'a> Future for AioFut<'a> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let poll_result = match self.op {
                 AioOp::Fsync(ref mut io) =>
-                    io.poll(cx),
+                    io.poll_ready(cx),
                 AioOp::Read(ref mut io) =>
-                    io.poll(cx),
+                    io.poll_ready(cx),
                 AioOp::Write(ref mut io) =>
-                    io.poll(cx),
+                    io.poll_ready(cx),
         };
         match poll_result {
             Poll::Pending => {
