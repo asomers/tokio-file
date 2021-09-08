@@ -1,4 +1,3 @@
-use galvanic_test::*;
 use nix::unistd::Uid;
 use std::ffi::OsStr;
 use std::fs;
@@ -208,48 +207,44 @@ fn writev_at_static() {
 }
 
 // Tests that work with device files
-test_suite! {
-    name dev;
-
+mod dev {
     use super::*;
 
+    use rstest::{fixture, rstest};
     use std::os::unix::ffi::OsStrExt;
     use std::path::PathBuf;
 
-    fixture md() -> Option<PathBuf> {
-        members {
-            devname: Option<PathBuf>
-        }
-        setup(&mut self ) {
-            self.devname = if Uid::current().is_root() {
-                let output = Command::new("mdconfig")
-                    .args(&["-a", "-t",  "swap", "-s", "1m"])
-                    .output()
-                    .expect("failed to allocate md(4) device");
-                // Strip the trailing "\n"
-                let l = output.stdout.len() - 1;
-                let mddev = OsStr::from_bytes(&output.stdout[0..l]);
-                Some(Path::new("/dev").join(&mddev))
-            } else {
-                None
-            };
-            self.devname.clone()
-        }
-
-        tear_down(&self) {
-            if let Some(ref path) = self.devname {
-                Command::new("mdconfig")
-                    .args(&["-d", "-u"])
-                    .arg(&path)
-                    .output()
-                    .expect("failed to deallocate md(4) device");
-            }
+    struct Md(PathBuf);
+    impl Drop for Md {
+        fn drop(&mut self) {
+            Command::new("mdconfig")
+                .args(&["-d", "-u"])
+                .arg(&self.0)
+                .output()
+                .expect("failed to deallocate md(4) device");
         }
     }
 
-    test len(md){
-        if let Some(path) = md.val {
-            let file = t!(File::open(&path));
+    #[fixture]
+    fn md() -> Option<Md> {
+        if Uid::current().is_root() {
+            let output = Command::new("mdconfig")
+                .args(&["-a", "-t",  "swap", "-s", "1m"])
+                .output()
+                .expect("failed to allocate md(4) device");
+            // Strip the trailing "\n"
+            let l = output.stdout.len() - 1;
+            let mddev = OsStr::from_bytes(&output.stdout[0..l]);
+            Some(Md(Path::new("/dev").join(&mddev)))
+        } else {
+            None
+        }
+    }
+
+    #[rstest]
+    fn len(md: Option<Md>){
+        if let Some(md) = md {
+            let file = t!(File::open(&md.0));
             let len = file.len().unwrap();
             assert_eq!(len, 1_048_576);
         } else {
@@ -258,8 +253,9 @@ test_suite! {
     }
 
     // readv with unaligned buffers
-    test readv_at(md) {
-        if let Some(path) = md.val {
+    #[rstest]
+    fn readv_at(md: Option<Md>) {
+        if let Some(md) = md {
             let mut orig = vec![0u8; 2048];
             orig[100..512].copy_from_slice(&[1u8; 412]);
             orig[512..1024].copy_from_slice(&[2u8; 512]);
@@ -280,13 +276,13 @@ test_suite! {
 
             fs::OpenOptions::new()
                 .write(true)
-                .open(&path)
+                .open(&md.0)
                 .expect("open failed")
                 .write_all(&orig)
                 .expect("write failed");
 
             {
-                let file = t!(File::open(&path));
+                let file = t!(File::open(&md.0));
                 let mut rslices = rbufs.iter_mut()
                     .map(|b| b.as_mut())
                     .collect::<Vec<_>>();
@@ -311,8 +307,9 @@ test_suite! {
     }
 
     // writev with unaligned buffers
-    test writev_at(md) {
-        if let Some(path) = md.val {
+    #[rstest]
+    fn writev_at(md: Option<Md>) {
+        if let Some(md) = md {
             let wbufs = [
                 &vec![0u8; 100][..],
                 &vec![1u8; 412][..],
@@ -323,7 +320,7 @@ test_suite! {
                 &vec![6u8; 512][..],
             ];
             let mut rt = runtime::Runtime::new().unwrap();
-            let file = t!(File::open(&path));
+            let file = t!(File::open(&md.0));
 
             let r = rt.block_on(async {
                 file.writev_at(&wbufs[..], 0).expect("writev_at failed early")
@@ -333,7 +330,7 @@ test_suite! {
 
             drop(file);
 
-            let mut f = fs::File::open(&path).unwrap();
+            let mut f = fs::File::open(&md.0).unwrap();
             let mut rbuf = vec![0u8; 2048];
             t!(f.read_exact(&mut rbuf));
             assert_eq!(wbufs[0], &rbuf[0..100]);

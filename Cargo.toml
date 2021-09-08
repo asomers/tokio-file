@@ -26,7 +26,7 @@ mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "fceac1d"}
 tokio = { version = "0.2.0", features = [ "io-driver" ] }
 
 [dev-dependencies]
-galvanic-test = "0.2.0"
+rstest = "0.11.0"
 getopts = "0.2.18"
 sysctl = "0.1"
 tempfile = "3.0"
