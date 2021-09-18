@@ -26,7 +26,7 @@ mio-aio = { version = "0.6.0", features = ["tokio"] }
 tokio = { git = "https://github.com/tokio-rs/tokio", rev = "957ed3e", features = [ "net" ] }
 
 [dev-dependencies]
-galvanic-test = "0.2.0"
+rstest = "0.11.0"
 getopts = "0.2.18"
 sysctl = "0.1"
 tempfile = "3.0"

@@ -38,6 +38,7 @@
 //! assert_eq!(file.read_to_end(&mut rbuf).unwrap(), contents.len());
 //! assert_eq!(&contents[..], &rbuf[..]);
 //! ```
+#![deny(missing_docs)]
 
 mod file;
 
