@@ -13,8 +13,8 @@ mixed with all other Future types within the Tokio reactor.
 ```toml
 # Cargo.toml
 [depdendencies]
-tokio = "0.2.0"
-tokio-file = "0.6.0"
+tokio = "1.0.0"
+tokio-file = "0.7.0"
 ```
 
 # Usage
@@ -25,7 +25,7 @@ running the resulting futures in the tokio reactor.
 
 # Platforms
 
-`tokio-file` version 0.6 works on FreeBSD, using the `mio-aio` crate..  It will
+`tokio-file` version 0.7 works on FreeBSD, using the `mio-aio` crate.  It will
 probably also work on DragonflyBSD and OSX.  It does not work on Linux.  The
 `tokio-file` API can be supported on Linux, but it will need a completely
 different backend.  Instead of using POSIX AIO as `mio-aio` does, Linux will

@@ -10,7 +10,6 @@ description = """
 Asynchronous file I/O for Tokio
 """
 categories = ["asynchronous", "filesystem"]
-documentation = "https://asomers.github.io/tokio-file/tokio_file/"
 include = ["src/**/*", "LICENSE-*", "README.md", "CHANGELOG.md"]
 
 [package.metadata.docs.rs]
