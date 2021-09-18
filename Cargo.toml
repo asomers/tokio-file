@@ -20,7 +20,7 @@ targets = [
 
 [dependencies]
 futures = "0.3.0"
-mio = "0.7.0"
+mio = "0.7.7"
 nix = "0.22.0"
 mio-aio = { version = "0.6.0", features = ["tokio"] }
 tokio = { git = "https://github.com/tokio-rs/tokio", rev = "957ed3e", features = [ "net" ] }
