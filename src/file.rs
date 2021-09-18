@@ -140,25 +140,25 @@ pub struct AioResult {
     pub value: Option<isize>,
 }
 
-/// The return value of [`readv_at`]
+/// The return value of [`File::readv_at`]
 #[must_use = "futures do nothing unless polled"]
 #[allow(clippy::type_complexity)]
 pub struct ReadvAt<'a> {
     op: Option<Aio<WrappedLioCb<'a>>>,
-    /// If needed, bufsav.0 combines [`readv_at`]'s argument slices into a
+    /// If needed, bufsav.0 combines [`File::readv_at`]'s argument slices into a
     /// bigger slice that satisfies sectorsize requirements.  After completion,
     /// the data will be copied back to bufsav.1
     bufsav: Option<(Pin<Box<[u8]>>, &'a mut [&'a mut [u8]])>,
     state: AioState,
 }
 
-/// The return value of [`writev_at`]
+/// The return value of [`File::writev_at`]
 #[must_use = "futures do nothing unless polled"]
 pub struct WritevAt<'a> {
     op: Option<Aio<WrappedLioCb<'a>>>,
-    /// If needed, _accumulator combines [`writev_at`]'s argument slices into a
-    /// bigger slice that satisfies sectorsize requirements, and owns the data
-    /// for the lifetime of [`op`].
+    /// If needed, _accumulator combines [`File::writev_at`]'s argument slices
+    /// into a bigger slice that satisfies sectorsize requirements, and owns the
+    /// data for the lifetime of [`WritevAt::op`].
     _accumulator: Option<Pin<Box<[u8]>>>,
     state: AioState,
 }
