@@ -27,7 +27,11 @@ fn write_at_eagain() {
 
     let wbuf = vec![0u8; 4096];
 
-    let mut rt = runtime::Runtime::new().unwrap();
+    let rt = runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+
     let results = rt.block_on(async {
         let futs = (0..count).map(|i| {
             file.write_at(&wbuf[..], 4096 * i as u64).unwrap()

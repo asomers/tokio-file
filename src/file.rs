@@ -3,10 +3,9 @@ use futures::{
     Future,
     task::{Context, Poll}
 };
-use mio::unix::UnixReady;
 pub use mio_aio::LioError;
 use nix::errno::Errno;
-use tokio::io::PollEvented;
+use tokio::io::bsd::{AioSource, Aio};
 use std::{fs, io, mem};
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -34,15 +33,14 @@ fn conv_poll_err<T>(e: io::Error) -> Poll<Result<T, nix::Error>> {
 }
 
 macro_rules! lio_resubmit {
-    ($self: ident, $cx: expr) => {
+    ($self: ident, $ev: expr) => {
         {
             // Some requests must've completed; now issue the rest.
-            let result = $self.op.as_mut().unwrap().get_mut().resubmit();
+            let result = (*$self.op.as_mut().unwrap()).0.resubmit();
             $self.op
                 .as_mut()
                 .unwrap()
-                .clear_read_ready($cx, UnixReady::lio().into())
-                .unwrap();
+                .clear_ready($ev);
             match result {
                 Ok(()) => {
                     $self.state = AioState::InProgress;
@@ -58,12 +56,40 @@ macro_rules! lio_resubmit {
     }
 }
 
+/// Must wrap the real mio::event::Source in order to implement AioSource, which
+/// exists because Tokio has a policy of not exposing any mio types in its
+/// public API.
+#[derive(Debug)]
+struct WrappedAioCb<'a>(mio_aio::AioCb<'a>);
+impl<'a> AioSource for WrappedAioCb<'a> {
+    fn register(&mut self, kq: RawFd, token: usize) {
+        self.0.register_raw(kq, token)
+    }
+    fn deregister(&mut self) {
+        self.0.deregister_raw()
+    }
+}
+
+/// Must wrap the real mio::event::Source in order to implement AioSource, which
+/// exists because Tokio has a policy of not exposing any mio types in its
+/// public API.
+#[derive(Debug)]
+struct WrappedLioCb<'a>(mio_aio::LioCb<'a>);
+impl<'a> AioSource for WrappedLioCb<'a> {
+    fn register(&mut self, kq: RawFd, token: usize) {
+        self.0.register_raw(kq, token)
+    }
+    fn deregister(&mut self) {
+        self.0.deregister_raw()
+    }
+}
+
 // LCOV_EXCL_START
 #[derive(Debug)]
 enum AioOp<'a> {
-    Fsync(PollEvented<mio_aio::AioCb<'static>>),
-    Read(PollEvented<mio_aio::AioCb<'a>>),
-    Write(PollEvented<mio_aio::AioCb<'a>>),
+    Fsync(Aio<WrappedAioCb<'static>>),
+    Read(Aio<WrappedAioCb<'a>>),
+    Write(Aio<WrappedAioCb<'a>>),
 }
 // LCOV_EXCL_STOP
 
@@ -99,9 +125,9 @@ impl<'a> AioFut<'a> {
     fn aio_return(&mut self) -> Result<Option<isize>, nix::Error> {
         match self.op {
             AioOp::Fsync(ref mut io) =>
-                io.get_mut().aio_return().map(|_| None),
+                (*io).0.aio_return().map(|_| None),
             AioOp::Read(ref mut io) | AioOp::Write(ref mut io) =>
-                io.get_mut().aio_return().map(Some),
+                (*io).0.aio_return().map(Some),
         }
     }
 }
@@ -118,7 +144,7 @@ pub struct AioResult {
 #[must_use = "futures do nothing unless polled"]
 #[allow(clippy::type_complexity)]
 pub struct ReadvAt<'a> {
-    op: Option<PollEvented<mio_aio::LioCb<'a>>>,
+    op: Option<Aio<WrappedLioCb<'a>>>,
     /// If needed, bufsav.0 combines [`readv_at`]'s argument slices into a
     /// bigger slice that satisfies sectorsize requirements.  After completion,
     /// the data will be copied back to bufsav.1
@@ -129,7 +155,7 @@ pub struct ReadvAt<'a> {
 /// The return value of [`writev_at`]
 #[must_use = "futures do nothing unless polled"]
 pub struct WritevAt<'a> {
-    op: Option<PollEvented<mio_aio::LioCb<'a>>>,
+    op: Option<Aio<WrappedLioCb<'a>>>,
     /// If needed, _accumulator combines [`writev_at`]'s argument slices into a
     /// bigger slice that satisfies sectorsize requirements, and owns the data
     /// for the lifetime of [`op`].
@@ -144,10 +170,10 @@ impl<'a> Future for ReadvAt<'a> {
         let poll_result = self.op
                               .as_mut()
                               .unwrap()
-                              .poll_read_ready(cx, UnixReady::lio().into());
+                              .poll_ready(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
-            let result = self.op.as_mut().unwrap().get_mut().submit();
+            let result = (*self.op.as_mut().unwrap()).0.submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
                 Err(LioError::EINCOMPLETE) => {
@@ -165,14 +191,14 @@ impl<'a> Future for ReadvAt<'a> {
         match poll_result {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Err(e)) => conv_poll_err(e),
-            Poll::Ready(Ok(ready)) => {
-                assert_eq!(UnixReady::from(ready), UnixReady::lio());
+            Poll::Ready(Ok(ev)) => {
                 if AioState::Incomplete == self.state {
-                    lio_resubmit!(self, cx)
+                    lio_resubmit!(self, ev)
                 } else {
                     let r = self.op.take()
                         .unwrap()
-                        .into_inner().unwrap()
+                        .into_inner()
+                        .0
                         .into_results(|mut iter|
                             iter.try_fold(0, |total, lr|
                                 lr.result.map(|r| total + r as usize)
@@ -198,7 +224,6 @@ impl<'a> Future for ReadvAt<'a> {
                         }
                     }
                     Poll::Ready(r)
-
                 }
             }
         }
@@ -212,10 +237,10 @@ impl<'a> Future for WritevAt<'a> {
         let poll_result = self.op
                               .as_mut()
                               .unwrap()
-                              .poll_read_ready(cx, UnixReady::lio().into());
+                              .poll_ready(cx);
         if let AioState::Allocated = self.state {
             assert!(poll_result.is_pending());
-            let result = self.op.as_mut().unwrap().get_mut().submit();
+            let result = (*self.op.as_mut().unwrap()).0.submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
                 Err(LioError::EINCOMPLETE) => {
@@ -233,14 +258,14 @@ impl<'a> Future for WritevAt<'a> {
         match poll_result {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Err(e)) => conv_poll_err(e),
-            Poll::Ready(Ok(ready)) => {
-                assert_eq!(UnixReady::from(ready), UnixReady::lio());
+            Poll::Ready(Ok(ev)) => {
                 if AioState::Incomplete == self.state {
-                    lio_resubmit!(self, cx)
+                    lio_resubmit!(self, ev)
                 } else {
                     let r = self.op.take()
                         .unwrap()
-                        .into_inner().unwrap()
+                        .into_inner()
+                        .0
                         .into_results(|mut iter|
                             iter.try_fold(0, |total, lr|
                                 lr.result.map(|r| total + r as usize)
@@ -353,7 +378,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Write;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// const WBUF: &[u8] = b"abcdef";
     /// const EXPECT: &[u8] = b"cdef";
@@ -368,7 +393,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let r = rt.block_on(async {
     ///     file.read_at(&mut rbuf[..], 2).unwrap().await
     /// }).unwrap();
@@ -382,7 +410,8 @@ impl File {
                             buf,
                             0,  //priority
                             mio_aio::LioOpcode::LIO_NOP);
-        PollEvented::new(aiocb)
+        let source = WrappedAioCb(aiocb);
+        Aio::new_for_aio(source)
         .map(|pe| AioFut {
             op: AioOp::Read(pe),
             state: AioState::Allocated
@@ -421,7 +450,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Write;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
     /// const EXPECT0: &[u8] = b"cdef";
@@ -442,7 +471,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let mut r = rt.block_on(async {
     ///     file.readv_at(&mut rbufs[..], 2).unwrap().await
     /// }).unwrap();
@@ -495,7 +527,8 @@ impl File {
             }
         }
         let liocb = builder.finish();
-        PollEvented::new(liocb)
+        let source = WrappedLioCb(liocb);
+        Aio::new_for_lio(source)
         .map(|pe| ReadvAt {
             op: Some(pe),
             bufsav,
@@ -513,7 +546,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Read;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// let contents = b"abcdef";
     /// let mut rbuf = Vec::new();
@@ -526,7 +559,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let r = rt.block_on(async {
     ///     file.write_at(contents, 0).unwrap().await
     /// }).unwrap();
@@ -543,7 +579,8 @@ impl File {
         let fd = self.file.as_raw_fd();
         let aiocb = mio_aio::AioCb::from_slice(fd, offset, buf, 0,
             mio_aio::LioOpcode::LIO_NOP);
-        PollEvented::new(aiocb)
+        let source = WrappedAioCb(aiocb);
+        Aio::new_for_aio(source)
         .map(|pe| AioFut{
             op: AioOp::Write(pe),
             state: AioState::Allocated
@@ -580,7 +617,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Read;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// const EXPECT: &[u8] = b"abcdefghij";
     /// let wbuf0 = b"abcdef";
@@ -596,7 +633,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let r = rt.block_on(async {
     ///     file.writev_at(&wbufs[..], 0).unwrap().await
     /// }).unwrap();
@@ -651,7 +691,8 @@ impl File {
             }
         }
         let liocb = builder.finish();
-        PollEvented::new(liocb)
+        let source = WrappedLioCb(liocb);
+        Aio::new_for_lio(source)
         .map(|pe| 
              WritevAt {
                 _accumulator: accumulator,
@@ -670,7 +711,7 @@ impl File {
     /// use std::fs;
     /// use std::io::Write;
     /// use tempfile::TempDir;
-    /// use tokio::runtime::Runtime;
+    /// use tokio::runtime;
     ///
     /// let dir = TempDir::new().unwrap();
     /// let path = dir.path().join("foo");
@@ -681,7 +722,10 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let mut rt = Runtime::new().unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
     /// let r = rt.block_on(async {
     ///     file.sync_all().unwrap().await
     /// }).unwrap();
@@ -691,7 +735,8 @@ impl File {
         let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
                             0,  //priority
                             );
-        PollEvented::new(aiocb)
+        let source = WrappedAioCb(aiocb);
+        Aio::new_for_aio(source)
         .map(|pe| AioFut{
             op: AioOp::Fsync(pe),
             state: AioState::Allocated
@@ -711,20 +756,20 @@ impl<'a> Future for AioFut<'a> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let poll_result = match self.op {
                 AioOp::Fsync(ref mut io) =>
-                    io.poll_read_ready(cx, UnixReady::aio().into()),
+                    io.poll_ready(cx),
                 AioOp::Read(ref mut io) =>
-                    io.poll_read_ready(cx, UnixReady::aio().into()),
+                    io.poll_ready(cx),
                 AioOp::Write(ref mut io) =>
-                    io.poll_read_ready(cx, UnixReady::aio().into()),
+                    io.poll_ready(cx),
         };
         match poll_result {
             Poll::Pending => {
                 if self.state == AioState::Allocated {
                     let r = match self.op {
-                        AioOp::Fsync(ref mut pe) => pe.get_mut()
+                        AioOp::Fsync(ref mut pe) => (*pe).0
                             .fsync(mio_aio::AioFsyncMode::O_SYNC),
-                        AioOp::Read(ref mut pe) => pe.get_mut().read(),
-                        AioOp::Write(ref mut pe) => pe.get_mut().write(),
+                        AioOp::Read(ref mut pe) => (*pe).0.read(),
+                        AioOp::Write(ref mut pe) => (*pe).0.write(),
                     };
                     if let Err(e) = r {
                         return Poll::Ready(Err(e));
@@ -734,8 +779,7 @@ impl<'a> Future for AioFut<'a> {
                 Poll::Pending
             },
             Poll::Ready(Err(e)) => conv_poll_err(e),
-            Poll::Ready(Ok(ready)) => {
-                assert_eq!(UnixReady::from(ready), UnixReady::aio());
+            Poll::Ready(Ok(_ev)) => {
                 let result = self.aio_return();
                 match result {
                     Ok(x) => Poll::Ready(Ok(AioResult{value: x})),

@@ -20,17 +20,17 @@ targets = [
 
 [dependencies]
 futures = "0.3.0"
-mio = "0.6.13"
+mio = "0.7.7"
 nix = "0.22.0"
-mio-aio = { git = "https://github.com/asomers/mio-aio", rev = "fceac1d"}
-tokio = { version = "0.2.0", features = [ "io-driver" ] }
+mio-aio = { version = "0.6.0", features = ["tokio"] }
+tokio = { git = "https://github.com/tokio-rs/tokio", rev = "957ed3e", features = [ "net" ] }
 
 [dev-dependencies]
 rstest = "0.11.0"
 getopts = "0.2.18"
 sysctl = "0.1"
 tempfile = "3.0"
-tokio = { version = "0.2.0", features = [ "rt-core" ] }
+tokio = { git = "https://github.com/tokio-rs/tokio", rev = "957ed3e", features = [ "net", "rt" ] }
 
 [[test]]
 name = "functional"
