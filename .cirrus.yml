@@ -6,6 +6,8 @@ setup: &SETUP
     HOME: /tmp # cargo cache needs it
     # Temporary workaround for https://github.com/rust-lang/rustup/issues/2774
     RUSTUP_IO_THREADS: 1
+    RUSTFLAGS: -D warnings
+    RUSTDOCFLAGS: -D warnings
   # Record some info about the test environment
   sysinfo_script:
     - mount
@@ -30,6 +32,7 @@ task:
   test_script:
     - . $HOME/.cargo/env
     - cargo +$VERSION test
+    - cargo +$VERSION doc --no-deps
     # Also run tests with sudo, because some need it for mdconfig
     - sudo -E cargo test --tests
   before_cache_script: rm -rf $HOME/.cargo/registry/index
@@ -49,6 +52,7 @@ task:
     - . $HOME/.cargo/env
     - cargo +$VERSION update -Zminimal-versions
     - cargo +$VERSION check --all-targets
+    - cargo +$VERSION doc --no-deps
   clippy_script:
     - . $HOME/.cargo/env
     - cargo +$VERSION clippy --all-features --all-targets -- -D warnings
