@@ -44,13 +44,11 @@ macro_rules! lio_resubmit {
             match result {
                 Ok(()) => {
                     $self.state = AioState::InProgress;
-                    Poll::Pending
+                    None
                 },
-                Err(LioError::EINCOMPLETE) => Poll::Pending,
-                Err(LioError::EAGAIN) =>
-                    Poll::Ready(Err(Errno::EAGAIN)),
-                Err(LioError::EIO(_)) =>
-                    Poll::Ready(Err(Errno::EIO)),
+                Err(LioError::EINCOMPLETE) => None,
+                Err(LioError::EAGAIN) => Some(Err(Errno::EAGAIN)),
+                Err(LioError::EIO(_)) => Some(Err(Errno::EIO)),
             }
         }
     }
@@ -167,12 +165,7 @@ impl<'a> Future for ReadvAt<'a> {
     type Output = Result<usize, nix::Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let poll_result = self.op
-                              .as_mut()
-                              .unwrap()
-                              .poll_ready(cx);
         if let AioState::Allocated = self.state {
-            assert!(poll_result.is_pending());
             let result = (*self.op.as_mut().unwrap()).0.submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
@@ -188,42 +181,50 @@ impl<'a> Future for ReadvAt<'a> {
                 },
             }
         }
-        match poll_result {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(Err(e)) => conv_poll_err(e),
-            Poll::Ready(Ok(ev)) => {
-                if AioState::Incomplete == self.state {
-                    lio_resubmit!(self, ev)
-                } else {
-                    let r = self.op.take()
-                        .unwrap()
-                        .into_inner()
-                        .0
-                        .into_results(|mut iter|
-                            iter.try_fold(0, |total, lr|
-                                lr.result.map(|r| total + r as usize)
-                            )
-                        );
-                    if let Ok(v) = r {
-                        if let Some((accum, ob)) = &mut self.bufsav  {
-                            // Copy results back into the individual buffers
-                            let mut i = 0;
-                            let mut j = 0;
-                            let mut total = 0;
-                            while total < v {
-                                let z = (v - total).min(ob[i].len() - j);
-                                ob[i][j..j + z]
-                                    .copy_from_slice(&accum[total..total + z]);
-                                j += z;
-                                total += z;
-                                if j == ob[i].len() {
-                                    j = 0;
-                                    i += 1;
+        loop {
+            let poll_result = self.op
+                                  .as_mut()
+                                  .unwrap()
+                                  .poll_ready(cx);
+            match poll_result {
+                Poll::Pending => break Poll::Pending,
+                Poll::Ready(Err(e)) => break conv_poll_err(e),
+                Poll::Ready(Ok(ev)) => {
+                    if AioState::Incomplete == self.state {
+                        if let Some(r) = lio_resubmit!(self, ev) {
+                            break Poll::Ready(r);
+                        }
+                    } else {
+                        let r = self.op.take()
+                            .unwrap()
+                            .into_inner()
+                            .0
+                            .into_results(|mut iter|
+                                iter.try_fold(0, |total, lr|
+                                    lr.result.map(|r| total + r as usize)
+                                )
+                            );
+                        if let Ok(v) = r {
+                            if let Some((accum, ob)) = &mut self.bufsav  {
+                                // Copy results back into the individual buffers
+                                let mut i = 0;
+                                let mut j = 0;
+                                let mut tot = 0;
+                                while tot < v {
+                                    let z = (v - tot).min(ob[i].len() - j);
+                                    ob[i][j..j + z]
+                                        .copy_from_slice(&accum[tot..tot + z]);
+                                    j += z;
+                                    tot += z;
+                                    if j == ob[i].len() {
+                                        j = 0;
+                                        i += 1;
+                                    }
                                 }
                             }
                         }
+                        break Poll::Ready(r)
                     }
-                    Poll::Ready(r)
                 }
             }
         }
@@ -234,12 +235,7 @@ impl<'a> Future for WritevAt<'a> {
     type Output = Result<usize, nix::Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let poll_result = self.op
-                              .as_mut()
-                              .unwrap()
-                              .poll_ready(cx);
         if let AioState::Allocated = self.state {
-            assert!(poll_result.is_pending());
             let result = (*self.op.as_mut().unwrap()).0.submit();
             match result {
                 Ok(()) => self.state = AioState::InProgress,
@@ -255,23 +251,31 @@ impl<'a> Future for WritevAt<'a> {
                 },
             }
         }
-        match poll_result {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(Err(e)) => conv_poll_err(e),
-            Poll::Ready(Ok(ev)) => {
-                if AioState::Incomplete == self.state {
-                    lio_resubmit!(self, ev)
-                } else {
-                    let r = self.op.take()
-                        .unwrap()
-                        .into_inner()
-                        .0
-                        .into_results(|mut iter|
-                            iter.try_fold(0, |total, lr|
-                                lr.result.map(|r| total + r as usize)
-                            )
-                        );
-                    Poll::Ready(r)
+        loop {
+            let poll_result = self.op
+                                  .as_mut()
+                                  .unwrap()
+                                  .poll_ready(cx);
+            match poll_result {
+                Poll::Pending => break Poll::Pending,
+                Poll::Ready(Err(e)) => break conv_poll_err(e),
+                Poll::Ready(Ok(ev)) => {
+                    if AioState::Incomplete == self.state {
+                        if let Some(r) = lio_resubmit!(self, ev) {
+                            break Poll::Ready(r);
+                        }
+                    } else {
+                        let r = self.op.take()
+                            .unwrap()
+                            .into_inner()
+                            .0
+                            .into_results(|mut iter|
+                                iter.try_fold(0, |total, lr|
+                                    lr.result.map(|r| total + r as usize)
+                                )
+                            );
+                        break Poll::Ready(r);
+                    }
                 }
             }
         }
