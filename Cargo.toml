@@ -22,14 +22,14 @@ futures = "0.3.0"
 mio = "0.7.7"
 nix = "0.22.0"
 mio-aio = { version = "0.6.0", features = ["tokio"] }
-tokio = { git = "https://github.com/tokio-rs/tokio", rev = "957ed3e", features = [ "net" ] }
+tokio = { version = "1.12.0", features = [ "net" ] }
 
 [dev-dependencies]
 rstest = "0.11.0"
 getopts = "0.2.18"
 sysctl = "0.1"
 tempfile = "3.0"
-tokio = { git = "https://github.com/tokio-rs/tokio", rev = "957ed3e", features = [ "net", "rt" ] }
+tokio = { version = "1.12.0", features = [ "net", "rt" ] }
 
 [[test]]
 name = "functional"

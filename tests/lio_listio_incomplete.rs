@@ -15,7 +15,7 @@ macro_rules! t {
 // A writev_at call fails because lio_listio(2) returns EIO.  That means that
 // some of the AioCbs may have been initiated, but not all.
 // This test must run in its own process since it intentionally uses all of the
-// system's AIO resources.
+// process's AIO resources.
 #[test]
 fn writev_at_eio() {
     let alm = sysconf(SysconfVar::AIO_LISTIO_MAX).expect("sysconf").unwrap();
