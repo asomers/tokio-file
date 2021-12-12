@@ -1,10 +1,15 @@
-## [0.7.0] - 2021-09-18
+## [0.7.0] - 2021-12-11
 
 ### Changed
 
 - Updated Nix to 0.22.0.  This changes tokio-file's error types, because we
   reexport from Nix.
   (#[21](https://github.com/asomers/tokio-file/pull/21))
+
+## Fixed
+
+- Fixed `lio_listio` resubmission with Tokio 1.13.0 and later.
+  (#[28](https://github.com/asomers/tokio-file/pull/28))
 
 ## [0.6.0] - 2021-05-31
 ### Changed
