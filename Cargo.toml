@@ -20,8 +20,8 @@ targets = [
 [dependencies]
 futures = "0.3.0"
 mio = "0.7.7"
-nix = "0.22.0"
-mio-aio = { version = "0.6.0", features = ["tokio"] }
+nix = "0.23.0"
+mio-aio = { git = "https://github.com/asomers/mio-aio", features = ["tokio"], revision = "060e56011ecf96b030ab744b6c20d7e7c359f93e" }
 tokio = { version = "1.12.0", features = [ "net" ] }
 
 [dev-dependencies]

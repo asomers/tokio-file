@@ -1,3 +1,10 @@
+## [Unreleased] - ReleaseDate
+
+### Changed
+
+- Updated Nix to 0.23.0.  This raises the MSRV to 1.46.0
+  (#[29](https://github.com/asomers/tokio-file/pull/29))
+
 ## [0.7.0] - 2021-12-11
 
 ### Changed
