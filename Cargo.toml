@@ -20,13 +20,14 @@ targets = [
 [dependencies]
 futures = "0.3.0"
 mio = "0.7.7"
-nix = "0.23.0"
-mio-aio = { git = "https://github.com/asomers/mio-aio", features = ["tokio"], revision = "060e56011ecf96b030ab744b6c20d7e7c359f93e" }
+nix = { version = "0.24.0", default-features = false, features = ["ioctl"] }
+mio-aio = { version = "0.7.0", features = ["tokio"] }
 tokio = { version = "1.12.0", features = [ "net" ] }
 
 [dev-dependencies]
 rstest = "0.11.0"
 getopts = "0.2.18"
+nix = { version = "0.24.0", default-features = false, features = ["ioctl", "feature", "user"] }
 sysctl = "0.1"
 tempfile = "3.0"
 tokio = { version = "1.12.0", features = [ "net", "rt" ] }
