@@ -56,4 +56,8 @@ task:
   clippy_script:
     - . $HOME/.cargo/env
     - cargo +$VERSION clippy --all-features --all-targets -- -D warnings
+  audit_script
+    - . $HOME/.cargo/env
+    - cargo install cargo-audit
+    - cargo audit
   before_cache_script: rm -rf $HOME/.cargo/registry/index
