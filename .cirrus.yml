@@ -47,12 +47,6 @@ task:
     - cargo +$VERSION test --all-targets
     # Also run tests with sudo, because some need it for mdconfig
     - sudo -E cargo test --tests
-  # Test our minimal version spec
-  minver_test_script:
-    - . $HOME/.cargo/env
-    - cargo +$VERSION update -Zminimal-versions
-    - cargo +$VERSION check --all-targets
-    - cargo +$VERSION doc --no-deps
   clippy_script:
     - . $HOME/.cargo/env
     - cargo +$VERSION clippy --all-features --all-targets -- -D warnings
@@ -60,4 +54,10 @@ task:
     - . $HOME/.cargo/env
     - cargo install cargo-audit
     - cargo audit
+  # Test our minimal version spec
+  minver_test_script:
+    - . $HOME/.cargo/env
+    - cargo +$VERSION update -Zminimal-versions
+    - cargo +$VERSION check --all-targets
+    - cargo +$VERSION doc --no-deps
   before_cache_script: rm -rf $HOME/.cargo/registry/index
