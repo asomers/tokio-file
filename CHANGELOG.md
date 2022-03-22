@@ -2,6 +2,9 @@
 
 ### Changed
 
+- Updated the MSRV to 1.49.0, because Tokio did.
+  (#[30](https://github.com/asomers/tokio-file/pull/30))
+
 - Updated Nix to 0.23.0.  This raises the MSRV to 1.46.0
   (#[29](https://github.com/asomers/tokio-file/pull/29))
 
