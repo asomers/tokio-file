@@ -14,7 +14,7 @@ mixed with all other Future types within the Tokio reactor.
 # Cargo.toml
 [depdendencies]
 tokio = "1.0.0"
-tokio-file = "0.7.0"
+tokio-file = "0.8.0"
 ```
 
 # Usage
