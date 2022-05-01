@@ -82,16 +82,13 @@ impl<'a> AioSource for WrappedLioCb<'a> {
     }
 }
 
-// LCOV_EXCL_START
 #[derive(Debug)]
 enum AioOp<'a> {
     Fsync(Aio<WrappedAioCb<'static>>),
     Read(Aio<WrappedAioCb<'a>>),
     Write(Aio<WrappedAioCb<'a>>),
 }
-// LCOV_EXCL_STOP
 
-// LCOV_EXCL_START
 /// Represents the progress of a single AIO operation
 #[derive(Debug, Eq, PartialEq)]
 enum AioState {
@@ -104,9 +101,7 @@ enum AioState {
     /// `AioCb`s are in-progress, but some are not due to resource limitations.
     Incomplete,
 }
-// LCOV_EXCL_STOP
 
-// LCOV_EXCL_START
 /// A Future representing an AIO operation.
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
@@ -114,7 +109,6 @@ pub struct AioFut<'a> {
     op: AioOp<'a>,
     state: AioState,
 }
-// LCOV_EXCL_STOP
 
 impl<'a> AioFut<'a> {
     // Used internally by `futures::Future::poll`.  Should not be called by the
@@ -141,6 +135,7 @@ pub struct AioResult {
 /// The return value of [`File::readv_at`]
 #[must_use = "futures do nothing unless polled"]
 #[allow(clippy::type_complexity)]
+#[derive(Debug)]
 pub struct ReadvAt<'a> {
     op: Option<Aio<WrappedLioCb<'a>>>,
     /// If needed, bufsav.0 combines [`File::readv_at`]'s argument slices into a
@@ -152,6 +147,7 @@ pub struct ReadvAt<'a> {
 
 /// The return value of [`File::writev_at`]
 #[must_use = "futures do nothing unless polled"]
+#[derive(Debug)]
 pub struct WritevAt<'a> {
     op: Option<Aio<WrappedLioCb<'a>>>,
     /// If needed, _accumulator combines [`File::writev_at`]'s argument slices
@@ -167,7 +163,7 @@ impl<'a> Future for ReadvAt<'a> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         if let AioState::Allocated = self.state {
             let result = (*self.op.as_mut().unwrap()).0.submit();
-            match result {
+            match result {  // LCOV_EXCL_LINE
                 Ok(()) => self.state = AioState::InProgress,
                 Err(LioError::EINCOMPLETE) => {
                     // EINCOMPLETE means that some requests failed, but some
@@ -222,7 +218,7 @@ impl<'a> Future for ReadvAt<'a> {
                                     }
                                 }
                             }
-                        }
+                        }   // LCOV_EXCL_LINE
                         break Poll::Ready(r)
                     }
                 }
@@ -283,7 +279,6 @@ impl<'a> Future for WritevAt<'a> {
 }
 
 /// Basically a Tokio file handle.  This is the starting point for tokio-file.
-// LCOV_EXCL_START
 #[derive(Debug)]
 pub struct File {
     file: fs::File,
@@ -291,7 +286,6 @@ pub struct File {
     /// the device
     sectorsize: usize
 }
-// LCOV_EXCL_STOP
 
 // is_empty doesn't make much sense for files
 #[cfg_attr(feature = "cargo-clippy", allow(clippy::len_without_is_empty))]
@@ -542,6 +536,47 @@ impl File {
         })
     }
 
+    /// Asynchronous equivalent of `std::fs::File::sync_all`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::borrow::BorrowMut;
+    /// use std::fs;
+    /// use std::io::Write;
+    /// use tempfile::TempDir;
+    /// use tokio::runtime;
+    ///
+    /// let dir = TempDir::new().unwrap();
+    /// let path = dir.path().join("foo");
+    ///
+    /// let file = fs::OpenOptions::new()
+    ///     .write(true)
+    ///     .create(true)
+    ///     .open(&path)
+    ///     .map(tokio_file::File::new)
+    ///     .unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
+    /// let r = rt.block_on(async {
+    ///     file.sync_all().unwrap().await
+    /// }).unwrap();
+    /// ```
+    // TODO: add sync_all_data, for supported operating systems
+    pub fn sync_all(&self) -> io::Result<AioFut<'static>> {
+        let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
+                            0,  //priority
+                            );
+        let source = WrappedAioCb(aiocb);
+        Aio::new_for_aio(source)
+        .map(|pe| AioFut{
+            op: AioOp::Fsync(pe),
+            state: AioState::Allocated
+        })
+    }
+
     /// Asynchronous equivalent of `std::fs::File::write_at`.
     ///
     /// # Examples
@@ -705,47 +740,6 @@ impl File {
             }
         )
     }
-
-    /// Asynchronous equivalent of `std::fs::File::sync_all`
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::borrow::BorrowMut;
-    /// use std::fs;
-    /// use std::io::Write;
-    /// use tempfile::TempDir;
-    /// use tokio::runtime;
-    ///
-    /// let dir = TempDir::new().unwrap();
-    /// let path = dir.path().join("foo");
-    ///
-    /// let file = fs::OpenOptions::new()
-    ///     .write(true)
-    ///     .create(true)
-    ///     .open(&path)
-    ///     .map(tokio_file::File::new)
-    ///     .unwrap();
-    /// let rt = runtime::Builder::new_current_thread()
-    ///     .enable_io()
-    ///     .build()
-    ///     .unwrap();
-    /// let r = rt.block_on(async {
-    ///     file.sync_all().unwrap().await
-    /// }).unwrap();
-    /// ```
-    // TODO: add sync_all_data, for supported operating systems
-    pub fn sync_all(&self) -> io::Result<AioFut<'static>> {
-        let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
-                            0,  //priority
-                            );
-        let source = WrappedAioCb(aiocb);
-        Aio::new_for_aio(source)
-        .map(|pe| AioFut{
-            op: AioOp::Fsync(pe),
-            state: AioState::Allocated
-        })
-    }
 }
 
 impl AsRawFd for File {
@@ -793,3 +787,95 @@ impl<'a> Future for AioFut<'a> {
         }
     }
 }
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod t {
+    use std::fs;
+    use tempfile::TempDir;
+    use tokio::runtime;
+    use super::*;
+
+    /// Pet grcov
+    #[test]
+    fn debug_aiofut() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("foo");
+
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&path)
+            .map(File::new)
+            .unwrap();
+        let rt = runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let fut = file.sync_all().unwrap();
+            format!("{:?}", fut);
+        });
+    }
+
+    /// Pet grcov
+    #[test]
+    fn debug_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("foo");
+
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&path)
+            .map(File::new)
+            .unwrap();
+        format!("{:?}", file);
+    }
+
+    /// Pet grcov
+    #[test]
+    fn debug_readv_at() {
+        let mut rbuf0 = vec![0; 0];
+        let mut rbuf1 = vec![0; 0];
+        let mut rbufs = [&mut rbuf0[..], &mut rbuf1[..]];
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("foo");
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&path)
+            .map(File::new)
+            .unwrap();
+        let rt = runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let fut = file.readv_at(&mut rbufs[..], 2).unwrap();
+            format!("{:?}", fut);
+        });
+    }
+
+    /// Pet grcov
+    #[test]
+    fn debug_writev_at() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("foo");
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&path)
+            .map(File::new)
+            .unwrap();
+        let rt = runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let fut = file.writev_at(&[], 0).unwrap();
+            format!("{:?}", fut);
+        });
+    }
+}
+// LCOV_EXCL_STOP
