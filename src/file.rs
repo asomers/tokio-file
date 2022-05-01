@@ -542,6 +542,47 @@ impl File {
         })
     }
 
+    /// Asynchronous equivalent of `std::fs::File::sync_all`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::borrow::BorrowMut;
+    /// use std::fs;
+    /// use std::io::Write;
+    /// use tempfile::TempDir;
+    /// use tokio::runtime;
+    ///
+    /// let dir = TempDir::new().unwrap();
+    /// let path = dir.path().join("foo");
+    ///
+    /// let file = fs::OpenOptions::new()
+    ///     .write(true)
+    ///     .create(true)
+    ///     .open(&path)
+    ///     .map(tokio_file::File::new)
+    ///     .unwrap();
+    /// let rt = runtime::Builder::new_current_thread()
+    ///     .enable_io()
+    ///     .build()
+    ///     .unwrap();
+    /// let r = rt.block_on(async {
+    ///     file.sync_all().unwrap().await
+    /// }).unwrap();
+    /// ```
+    // TODO: add sync_all_data, for supported operating systems
+    pub fn sync_all(&self) -> io::Result<AioFut<'static>> {
+        let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
+                            0,  //priority
+                            );
+        let source = WrappedAioCb(aiocb);
+        Aio::new_for_aio(source)
+        .map(|pe| AioFut{
+            op: AioOp::Fsync(pe),
+            state: AioState::Allocated
+        })
+    }
+
     /// Asynchronous equivalent of `std::fs::File::write_at`.
     ///
     /// # Examples
@@ -704,47 +745,6 @@ impl File {
                 state: AioState::Allocated,
             }
         )
-    }
-
-    /// Asynchronous equivalent of `std::fs::File::sync_all`
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::borrow::BorrowMut;
-    /// use std::fs;
-    /// use std::io::Write;
-    /// use tempfile::TempDir;
-    /// use tokio::runtime;
-    ///
-    /// let dir = TempDir::new().unwrap();
-    /// let path = dir.path().join("foo");
-    ///
-    /// let file = fs::OpenOptions::new()
-    ///     .write(true)
-    ///     .create(true)
-    ///     .open(&path)
-    ///     .map(tokio_file::File::new)
-    ///     .unwrap();
-    /// let rt = runtime::Builder::new_current_thread()
-    ///     .enable_io()
-    ///     .build()
-    ///     .unwrap();
-    /// let r = rt.block_on(async {
-    ///     file.sync_all().unwrap().await
-    /// }).unwrap();
-    /// ```
-    // TODO: add sync_all_data, for supported operating systems
-    pub fn sync_all(&self) -> io::Result<AioFut<'static>> {
-        let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
-                            0,  //priority
-                            );
-        let source = WrappedAioCb(aiocb);
-        Aio::new_for_aio(source)
-        .map(|pe| AioFut{
-            op: AioOp::Fsync(pe),
-            state: AioState::Allocated
-        })
     }
 }
 
