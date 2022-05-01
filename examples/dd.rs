@@ -91,7 +91,7 @@ fn main() {
                 .unwrap()
                 .await
                 .unwrap();
-                ddc.ofs.set(ddc.ofs.get() + r.value.unwrap() as u64);
+                ddc.ofs.set(ddc.ofs.get() + r as u64);
             }
         }).await
     })

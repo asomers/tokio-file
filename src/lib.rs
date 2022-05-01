@@ -31,7 +31,7 @@
 //! let r = rt.block_on(async {
 //!     file.write_at(contents, 0).unwrap().await
 //! }).unwrap();
-//! assert_eq!(r.value.unwrap() as usize, contents.len());
+//! assert_eq!(r, contents.len());
 //! drop(file);
 //!
 //! let mut file = fs::File::open(&path).unwrap();
@@ -42,4 +42,4 @@
 
 mod file;
 
-pub use file::{AioFut, AioResult, File, ReadvAt, WritevAt};
+pub use file::{File, ReadAt, ReadvAt, SyncAll, WriteAt, WritevAt};
