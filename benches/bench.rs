@@ -3,13 +3,13 @@
 extern crate test;
 
 use futures::channel::oneshot;
-use std::fs;
-use std::io::Write;
+use std::io::{SeekFrom, Write};
 use std::os::unix::fs::FileExt;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use tempfile::TempDir;
 use test::Bencher;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::runtime::{self, Runtime};
 use tokio_file::File;
 
@@ -27,7 +27,7 @@ fn bench_aio_read(bench: &mut Bencher) {
     // First prep the test file
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("aio_read");
-    let mut f = fs::File::create(&path).unwrap();
+    let mut f = std::fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
     f.write_all(&wbuf).expect("write failed");
 
@@ -52,13 +52,13 @@ fn bench_threaded_read(bench: &mut Bencher) {
     // First prep the test file
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("threaded_read");
-    let mut f = fs::File::create(&path).unwrap();
+    let mut f = std::fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
     f.write_all(&wbuf).expect("write failed");
 
     // Prep the reactor
     let runtime = runtime();
-    let file = Arc::new(Mutex::new(fs::File::open(&path).unwrap()));
+    let file = Arc::new(Mutex::new(std::fs::File::open(&path).unwrap()));
 
     bench.iter(move || {
         let (tx, rx) = oneshot::channel::<usize>();
@@ -77,7 +77,7 @@ fn bench_threaded_read(bench: &mut Bencher) {
 }
     
 struct TpOpspec {
-    f:  Arc<Mutex<fs::File>>,
+    f:  Arc<Mutex<std::fs::File>>,
     offset: u64,
     tx: oneshot::Sender<usize>
 }
@@ -89,7 +89,7 @@ fn bench_threadpool_read(bench: &mut Bencher) {
     // First prep the test file
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("threadpool_read");
-    let mut f = fs::File::create(&path).unwrap();
+    let mut f = std::fs::File::create(&path).unwrap();
     let wbuf = vec![0; FLEN];
     f.write_all(&wbuf).expect("write failed");
 
@@ -114,7 +114,7 @@ fn bench_threadpool_read(bench: &mut Bencher) {
 
     // Prep the reactor
     let runtime = runtime();
-    let file = Arc::new(Mutex::new(fs::File::open(&path).unwrap()));
+    let file = Arc::new(Mutex::new(std::fs::File::open(&path).unwrap()));
     let ptxclone = ptx.clone();
 
     bench.iter(move || {
@@ -130,4 +130,28 @@ fn bench_threadpool_read(bench: &mut Bencher) {
         assert_eq!(len as usize, FLEN);
     });
     ptx.send(None).unwrap();
+}
+
+// Use Tokio's builtin thread-based file system routines.
+#[bench]
+fn bench_tokio_read(bench: &mut Bencher) {
+    // First prep the test file
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("aio_read");
+    let mut f = std::fs::File::create(&path).unwrap();
+    let wbuf = vec![0; FLEN];
+    f.write_all(&wbuf).expect("write failed");
+
+    // Prep the reactor
+    let runtime = runtime();
+    let mut file = runtime.block_on(tokio::fs::File::open(path)).unwrap();
+
+    let mut rbuf = vec![0u8; FLEN];
+    bench.iter(move || {
+        let len = runtime.block_on(async{
+            file.seek(SeekFrom::Start(0)).await.unwrap();
+            file.read_exact(&mut rbuf[..]).await
+        }).unwrap();
+        assert_eq!(len as usize, wbuf.len());
+    })
 }
