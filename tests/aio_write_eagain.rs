@@ -42,10 +42,10 @@ fn write_at_eagain() {
     let mut n_ok = 0;
     let mut n_eagain = 0;
     for result in results {
-        match result.as_ref() {
+        match result {
             Ok(aio_result) => {
                 n_ok += 1;
-                assert_eq!(aio_result.value.unwrap(), 4096);
+                assert_eq!(aio_result, 4096);
             },
             Err(nix::errno::Errno::EAGAIN) => n_eagain += 1,
             Err(e) => panic!("unexpected result {:?}", e)

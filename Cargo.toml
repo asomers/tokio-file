@@ -20,14 +20,14 @@ targets = [
 [dependencies]
 futures = "0.3.0"
 mio = "0.8.1"
-nix = { version = "0.24.0", default-features = false, features = ["ioctl"] }
-mio-aio = { version = "0.7.0", features = ["tokio"] }
+nix = {git = "http://github.com/nix-rust/nix", rev = "69738c0fd03af19053c5701a984f923ecbbfada6", default-features = false, features = ["aio", "ioctl"] }
+mio-aio = { git = "http://github.com/asomers/mio-aio", rev = "604c410041322eb29d8421478b9b816dd75824b8", features = ["tokio"] }
 tokio = { version = "1.17.0", features = [ "net" ] }
 
 [dev-dependencies]
 rstest = "0.11.0"
 getopts = "0.2.18"
-nix = { version = "0.24.0", default-features = false, features = ["ioctl", "feature", "user"] }
+nix = {git = "http://github.com/nix-rust/nix", rev = "69738c0fd03af19053c5701a984f923ecbbfada6", default-features = false, features = ["aio", "feature", "ioctl", "user"] }
 sysctl = "0.1"
 tempfile = "3.0"
 tokio = { version = "1.17.0", features = [ "fs", "io-util", "net", "rt" ] }
@@ -35,10 +35,6 @@ tokio = { version = "1.17.0", features = [ "fs", "io-util", "net", "rt" ] }
 [[test]]
 name = "functional"
 path = "tests/file.rs"
-
-[[test]]
-name = "lio_listio_incomplete"
-path = "tests/lio_listio_incomplete.rs"
 
 [[test]]
 name = "aio_write_eagain"

@@ -1,3 +1,31 @@
+## [Unreleased] - ReleaseDate
+
+### Changed
+
+- Rewrite `readv_at` and `writev_at` in terms of `aio_readv` and `aio_writev`
+  respectively, eliminating the old `lio_listio` based implementation.  This
+  means they won't work on less than FreeBSD 13.0.  The native implementations
+  are faster.  They're also atomic, meaning that no other process will see part
+  of the `writev_at` operation as complete but not all of it, and similarly for
+  `readv_at`.  They now take as arguments slices of `IoSliceMut` and `IoSlice`,
+  respectively, for better familiarity with the standard library.
+
+  The return type of all futures is now either `usize` or `()` instead of the
+  old `AioResult` enum.
+
+  Finally, each asynchronous method now returns a distinct `Future` type,
+  rather than all of them returning an `AioFut`.
+
+  Also, `tokio-file` now generates less memory allocator activity, thanks to
+  matching changes in its dependencies.
+  (#[34](https://github.com/asomers/tokio-file/pull/34))
+
+### Removed
+
+- `readv_at` and `writev_at` now require at least FreeBSD 13.0, and they no
+  repack buffers to meet device alignment requirements.
+  (#[34](https://github.com/asomers/tokio-file/pull/34))
+
 ## [0.8.0] - 2022-04-21
 
 ### Changed

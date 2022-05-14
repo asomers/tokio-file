@@ -1,16 +1,22 @@
 // vim: tw=80
+use std::{
+    fs,
+    io::{self, IoSlice, IoSliceMut},
+    mem,
+    os::unix::{
+        fs::FileTypeExt,
+        io::{AsRawFd, RawFd}
+    },
+    path::Path,
+    pin::Pin
+};
 use futures::{
     Future,
     task::{Context, Poll}
 };
-pub use mio_aio::LioError;
+use mio_aio::AioFsyncMode;
 use nix::errno::Errno;
 use tokio::io::bsd::{AioSource, Aio};
-use std::{fs, io, mem};
-use std::os::unix::fs::FileTypeExt;
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::path::Path;
-use std::pin::Pin;
 
 nix::ioctl_read! {
     /// Get the size of the entire device in bytes.  This should be a multiple
@@ -32,34 +38,10 @@ fn conv_poll_err<T>(e: io::Error) -> Poll<Result<T, nix::Error>> {
     Poll::Ready(Err(errno))
 }
 
-macro_rules! lio_resubmit {
-    ($self: ident, $ev: expr) => {
-        {
-            // Some requests must've completed; now issue the rest.
-            let result = (*$self.op.as_mut().unwrap()).0.resubmit();
-            $self.op
-                .as_mut()
-                .unwrap()
-                .clear_ready($ev);
-            match result {
-                Ok(()) => {
-                    $self.state = AioState::InProgress;
-                    None
-                },
-                Err(LioError::EINCOMPLETE) => None,
-                Err(LioError::EAGAIN) => Some(Err(Errno::EAGAIN)),
-                Err(LioError::EIO(_)) => Some(Err(Errno::EIO)),
-            }
-        }
-    }
-}
-
-/// Must wrap the real mio::event::Source in order to implement AioSource, which
-/// exists because Tokio has a policy of not exposing any mio types in its
-/// public API.
 #[derive(Debug)]
-struct WrappedAioCb<'a>(mio_aio::AioCb<'a>);
-impl<'a> AioSource for WrappedAioCb<'a> {
+struct TokioSource<T>(T);
+
+impl<T: mio_aio::SourceApi> AioSource for TokioSource<T> {
     fn register(&mut self, kq: RawFd, token: usize) {
         self.0.register_raw(kq, token)
     }
@@ -68,215 +50,56 @@ impl<'a> AioSource for WrappedAioCb<'a> {
     }
 }
 
-/// Must wrap the real mio::event::Source in order to implement AioSource, which
-/// exists because Tokio has a policy of not exposing any mio types in its
-/// public API.
-#[derive(Debug)]
-struct WrappedLioCb<'a>(mio_aio::LioCb<'a>);
-impl<'a> AioSource for WrappedLioCb<'a> {
-    fn register(&mut self, kq: RawFd, token: usize) {
-        self.0.register_raw(kq, token)
-    }
-    fn deregister(&mut self) {
-        self.0.deregister_raw()
-    }
-}
-
-#[derive(Debug)]
-enum AioOp<'a> {
-    Fsync(Aio<WrappedAioCb<'static>>),
-    Read(Aio<WrappedAioCb<'a>>),
-    Write(Aio<WrappedAioCb<'a>>),
-}
-
-/// Represents the progress of a single AIO operation
-#[derive(Debug, Eq, PartialEq)]
-enum AioState {
-    /// The AioFut has been allocated, but not submitted to the system
-    Allocated,
-    /// The AioFut has been submitted, ie with `write_at`, and is currently in
-    /// progress, but its status has not been returned with `aio_return`
-    InProgress,
-    /// A `ReadvAt` or `WritevAt` has been submitted and some of its constituent
-    /// `AioCb`s are in-progress, but some are not due to resource limitations.
-    Incomplete,
-}
-
-/// A Future representing an AIO operation.
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
-pub struct AioFut<'a> {
-    op: AioOp<'a>,
-    state: AioState,
-}
+/// Future type used by all methods of [`File`].
+pub struct TokioFileFut<T: mio_aio::SourceApi>(Aio<TokioSource<T>>);
 
-impl<'a> AioFut<'a> {
-    // Used internally by `futures::Future::poll`.  Should not be called by the
-    // user.
-    #[doc(hidden)]
-    fn aio_return(&mut self) -> Result<Option<isize>, nix::Error> {
-        match self.op {
-            AioOp::Fsync(ref mut io) =>
-                (*io).0.aio_return().map(|_| None),
-            AioOp::Read(ref mut io) | AioOp::Write(ref mut io) =>
-                (*io).0.aio_return().map(Some),
-        }
-    }
-}
+impl<T: mio_aio::SourceApi> Future for TokioFileFut<T> {
+    type Output = Result<T::Output, nix::Error>;
 
-/// Holds the result of an individual aio operation
-pub struct AioResult {
-    /// This is what the AIO operation would've returned, had it been
-    /// synchronous and successful.  fsync operations return `None`, read and
-    /// write operations return an `isize`
-    pub value: Option<isize>,
-}
-
-/// The return value of [`File::readv_at`]
-#[must_use = "futures do nothing unless polled"]
-#[allow(clippy::type_complexity)]
-#[derive(Debug)]
-pub struct ReadvAt<'a> {
-    op: Option<Aio<WrappedLioCb<'a>>>,
-    /// If needed, bufsav.0 combines [`File::readv_at`]'s argument slices into a
-    /// bigger slice that satisfies sectorsize requirements.  After completion,
-    /// the data will be copied back to bufsav.1
-    bufsav: Option<(Pin<Box<[u8]>>, &'a mut [&'a mut [u8]])>,
-    state: AioState,
-}
-
-/// The return value of [`File::writev_at`]
-#[must_use = "futures do nothing unless polled"]
-#[derive(Debug)]
-pub struct WritevAt<'a> {
-    op: Option<Aio<WrappedLioCb<'a>>>,
-    /// If needed, _accumulator combines [`File::writev_at`]'s argument slices
-    /// into a bigger slice that satisfies sectorsize requirements, and owns the
-    /// data for the lifetime of [`WritevAt::op`].
-    _accumulator: Option<Pin<Box<[u8]>>>,
-    state: AioState,
-}
-
-impl<'a> Future for ReadvAt<'a> {
-    type Output = Result<usize, nix::Error>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        if let AioState::Allocated = self.state {
-            let result = (*self.op.as_mut().unwrap()).0.submit();
-            match result {  // LCOV_EXCL_LINE
-                Ok(()) => self.state = AioState::InProgress,
-                Err(LioError::EINCOMPLETE) => {
-                    // EINCOMPLETE means that some requests failed, but some
-                    // were initiated
-                    self.state = AioState::Incomplete;
-                },
-                Err(LioError::EAGAIN) =>
-                    return Poll::Ready(Err(Errno::EAGAIN)),
-                Err(LioError::EIO(_)) => {
-                    return Poll::Ready(Err(Errno::EIO))
-                },
-            }
-        }
-        loop {
-            let poll_result = self.op
-                                  .as_mut()
-                                  .unwrap()
-                                  .poll_ready(cx);
-            match poll_result {
-                Poll::Pending => break Poll::Pending,
-                Poll::Ready(Err(e)) => break conv_poll_err(e),
-                Poll::Ready(Ok(ev)) => {
-                    if AioState::Incomplete == self.state {
-                        if let Some(r) = lio_resubmit!(self, ev) {
-                            break Poll::Ready(r);
-                        }
-                    } else {
-                        let r = self.op.take()
-                            .unwrap()
-                            .into_inner()
-                            .0
-                            .into_results(|mut iter|
-                                iter.try_fold(0, |total, lr|
-                                    lr.result.map(|r| total + r as usize)
-                                )
-                            );
-                        if let Ok(v) = r {
-                            if let Some((accum, ob)) = &mut self.bufsav  {
-                                // Copy results back into the individual buffers
-                                let mut i = 0;
-                                let mut j = 0;
-                                let mut tot = 0;
-                                while tot < v {
-                                    let z = (v - tot).min(ob[i].len() - j);
-                                    ob[i][j..j + z]
-                                        .copy_from_slice(&accum[tot..tot + z]);
-                                    j += z;
-                                    tot += z;
-                                    if j == ob[i].len() {
-                                        j = 0;
-                                        i += 1;
-                                    }
-                                }
-                            }
-                        }   // LCOV_EXCL_LINE
-                        break Poll::Ready(r)
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let poll_result = self.0.poll_ready(cx);
+        match poll_result {
+            Poll::Pending => {
+                if !self.0.0.in_progress() {
+                    let p = unsafe { self.map_unchecked_mut(|s| &mut s.0.0) };
+                    match p.submit() {
+                        Ok(()) => (),
+                        Err(e) => return Poll::Ready(Err(e))
                     }
+                }
+                Poll::Pending
+            },
+            Poll::Ready(Err(e)) => conv_poll_err(e),
+            Poll::Ready(Ok(_ev)) => {
+                // At this point, we could clear readiness.  But there's no
+                // point, since we're about to drop the Aio.
+                let p = unsafe { self.map_unchecked_mut(|s| &mut s.0.0) };
+                let result = p.aio_return();
+                match result {
+                    Ok(r) => Poll::Ready(Ok(r)),
+                    Err(e) => Poll::Ready(Err(e)),
                 }
             }
         }
     }
 }
 
-impl<'a> Future for WritevAt<'a> {
-    type Output = Result<usize, nix::Error>;
+/// Return type of [`File::read_at`].  Implements `Future`.
+pub type ReadAt<'a> = TokioFileFut<mio_aio::ReadAt<'a>>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        if let AioState::Allocated = self.state {
-            let result = (*self.op.as_mut().unwrap()).0.submit();
-            match result {
-                Ok(()) => self.state = AioState::InProgress,
-                Err(LioError::EINCOMPLETE) => {
-                    // EINCOMPLETE means that some requests failed, but some
-                    // were initiated
-                    self.state = AioState::Incomplete;
-                },
-                Err(LioError::EAGAIN) =>
-                    return Poll::Ready(Err(Errno::EAGAIN)),
-                Err(LioError::EIO(_)) => {
-                    return Poll::Ready(Err(Errno::EIO))
-                },
-            }
-        }
-        loop {
-            let poll_result = self.op
-                                  .as_mut()
-                                  .unwrap()
-                                  .poll_ready(cx);
-            match poll_result {
-                Poll::Pending => break Poll::Pending,
-                Poll::Ready(Err(e)) => break conv_poll_err(e),
-                Poll::Ready(Ok(ev)) => {
-                    if AioState::Incomplete == self.state {
-                        if let Some(r) = lio_resubmit!(self, ev) {
-                            break Poll::Ready(r);
-                        }
-                    } else {
-                        let r = self.op.take()
-                            .unwrap()
-                            .into_inner()
-                            .0
-                            .into_results(|mut iter|
-                                iter.try_fold(0, |total, lr|
-                                    lr.result.map(|r| total + r as usize)
-                                )
-                            );
-                        break Poll::Ready(r);
-                    }
-                }
-            }
-        }
-    }
-}
+/// Return type of [`File::readv_at`].  Implements `Future`.
+pub type ReadvAt<'a> = TokioFileFut<mio_aio::ReadvAt<'a>>;
+
+/// Return type of [`File::sync_all`].  Implements `Future`.
+pub type SyncAll = TokioFileFut<mio_aio::Fsync>;
+
+/// Return type of [`File::write_at`].  Implements `Future`.
+pub type WriteAt<'a> = TokioFileFut<mio_aio::WriteAt<'a>>;
+
+/// Return type of [`File::writev_at`].  Implements `Future`.
+pub type WritevAt<'a> = TokioFileFut<mio_aio::WritevAt<'a>>;
 
 /// Basically a Tokio file handle.  This is the starting point for tokio-file.
 #[derive(Debug)]
@@ -365,7 +188,7 @@ impl File {
             .write(true)
             .create(true)
             .open(path)
-            .map( File::new)
+            .map(File::new)
     }
 
     /// Asynchronous equivalent of `std::fs::File::read_at`
@@ -401,19 +224,11 @@ impl File {
     /// assert_eq!(&rbuf[..], &EXPECT[..]);
     /// ```
     pub fn read_at<'a>(&self, buf: &'a mut [u8], offset: u64)
-        -> io::Result<AioFut<'a>>
+        -> io::Result<ReadAt<'a>>
     {
-        let aiocb = mio_aio::AioCb::from_mut_slice(self.file.as_raw_fd(),
-                            offset,  //offset
-                            buf,
-                            0,  //priority
-                            mio_aio::LioOpcode::LIO_NOP);
-        let source = WrappedAioCb(aiocb);
-        Aio::new_for_aio(source)
-        .map(|pe| AioFut {
-            op: AioOp::Read(pe),
-            state: AioState::Allocated
-        })
+        let fd = self.file.as_raw_fd();
+        let source = TokioSource(mio_aio::ReadAt::read_at(fd, offset, buf, 0));
+        Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 
     /// Asynchronous equivalent of `preadv`.
@@ -421,9 +236,7 @@ impl File {
     /// Similar to
     /// [preadv(2)](https://www.freebsd.org/cgi/man.cgi?query=read&sektion=2)
     /// but asynchronous.  Reads a contiguous portion of a file into a
-    /// scatter-gather list of buffers.  Unlike `preadv`, there is no guarantee
-    /// of overall atomicity.  Each scatter gather element's contents could
-    /// reflect the state of the file at a different point in time.
+    /// scatter-gather list of buffers.
     ///
     /// # Parameters
     ///
@@ -435,9 +248,7 @@ impl File {
     ///
     /// - `Ok(x)`:  The operation was successfully created.  The future may be
     ///             polled and will eventually return the final status of the
-    ///             operation.  If the operation was partially successful, the
-    ///             future will complete an error with no indication of which
-    ///             parts of `bufs` are valid.
+    ///             operation.
     /// - `Err(x)`: An error occurred before issueing the operation.  The result
     ///             may be `drop`ped.
     ///
@@ -446,7 +257,7 @@ impl File {
     /// ```
     /// use std::borrow::BorrowMut;
     /// use std::fs;
-    /// use std::io::Write;
+    /// use std::io::{IoSliceMut, Write};
     /// use tempfile::TempDir;
     /// use tokio::runtime;
     ///
@@ -457,7 +268,7 @@ impl File {
     /// let l1 = 8;
     /// let mut rbuf0 = vec![0; l0];
     /// let mut rbuf1 = vec![0; l1];
-    /// let mut rbufs = [&mut rbuf0[..], &mut rbuf1[..]];
+    /// let mut rbufs = [IoSliceMut::new(&mut rbuf0), IoSliceMut::new(&mut rbuf1)];
     ///
     /// let dir = TempDir::new().unwrap();
     /// let path = dir.path().join("foo");
@@ -481,59 +292,12 @@ impl File {
     /// assert_eq!(&rbuf0[..], &EXPECT0[..]);
     /// assert_eq!(&rbuf1[..], &EXPECT1[..]);
     /// ```
-    pub fn readv_at<'a>(&self, bufs: &'a mut [&'a mut [u8]],
+    pub fn readv_at<'a>(&self, bufs: &'a mut [IoSliceMut<'a>],
                         offset: u64) -> io::Result<ReadvAt<'a>>
     {
-        let mut builder = mio_aio::LioCbBuilder::with_capacity(bufs.len());
-        let mut offs = offset;
         let fd = self.file.as_raw_fd();
-        let mut bufsav = None;
-        if self.sectorsize > 1 &&
-            bufs.iter().any(|buf| buf.len() % self.sectorsize != 0)
-        {
-            let l = bufs.iter().map(|buf| buf.len()).sum();
-            let mut accumulator: Pin<Box<[u8]>> =
-                vec![0; l].into_boxed_slice().into();
-            let original_buffers = bufs;
-            let buf: &'static mut [u8] = unsafe{
-                // Safe because the liocb's lifetime is equal to accumulator's
-                // (or rather, it will be once we move it into the ReadvAt
-                // struct).
-                mem::transmute::<&mut [u8], &'static mut [u8]>(
-                    &mut (accumulator.as_mut())
-                )
-            };
-            bufsav = Some((accumulator, original_buffers));
-            builder = builder.emplace_mut_slice(
-                fd,
-                offs,
-                buf,
-                0,
-                mio_aio::LioOpcode::LIO_READ
-            );
-        } else {
-            for buf in bufs.iter_mut() {
-                let l = buf.len();
-                builder = builder.emplace_mut_slice(
-                    fd,
-                    offs,
-                    *buf,
-                    0,
-                    mio_aio::LioOpcode::LIO_READ
-                );
-                offs += l as u64;
-            }
-        }
-        let liocb = builder.finish();
-        let source = WrappedLioCb(liocb);
-        Aio::new_for_lio(source)
-        .map(|pe| ReadvAt {
-            op: Some(pe),
-            bufsav,
-            //accumulator,
-            state: AioState::Allocated,
-            //original_buffers
-        })
+        let source = TokioSource(mio_aio::ReadvAt::readv_at(fd, offset, bufs, 0));
+        Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 
     /// Asynchronous equivalent of `std::fs::File::sync_all`
@@ -565,16 +329,11 @@ impl File {
     /// }).unwrap();
     /// ```
     // TODO: add sync_all_data, for supported operating systems
-    pub fn sync_all(&self) -> io::Result<AioFut<'static>> {
-        let aiocb = mio_aio::AioCb::from_fd(self.file.as_raw_fd(),
-                            0,  //priority
-                            );
-        let source = WrappedAioCb(aiocb);
-        Aio::new_for_aio(source)
-        .map(|pe| AioFut{
-            op: AioOp::Fsync(pe),
-            state: AioState::Allocated
-        })
+    pub fn sync_all(&self) -> io::Result<SyncAll> {
+        let mode = AioFsyncMode::O_SYNC;
+        let fd = self.file.as_raw_fd();
+        let source = TokioSource(mio_aio::Fsync::fsync(fd, mode, 0));
+        Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 
     /// Asynchronous equivalent of `std::fs::File::write_at`.
@@ -605,25 +364,22 @@ impl File {
     /// let r = rt.block_on(async {
     ///     file.write_at(contents, 0).unwrap().await
     /// }).unwrap();
-    /// assert_eq!(r.value.unwrap() as usize, contents.len());
+    /// assert_eq!(r, contents.len());
     /// drop(file);
     ///
     /// let mut file = fs::File::open(&path).unwrap();
     /// assert_eq!(file.read_to_end(&mut rbuf).unwrap(), contents.len());
     /// assert_eq!(&contents[..], &rbuf[..]);
     /// ```
-    pub fn write_at<'a>(&self, buf: &'a [u8],
-                    offset: u64) -> io::Result<AioFut<'a>>
+    pub fn write_at<'a>(
+        &self,
+        buf: &'a [u8],
+        offset: u64
+    ) -> io::Result<WriteAt<'a>>
     {
         let fd = self.file.as_raw_fd();
-        let aiocb = mio_aio::AioCb::from_slice(fd, offset, buf, 0,
-            mio_aio::LioOpcode::LIO_NOP);
-        let source = WrappedAioCb(aiocb);
-        Aio::new_for_aio(source)
-        .map(|pe| AioFut{
-            op: AioOp::Write(pe),
-            state: AioState::Allocated
-        })
+        let source = TokioSource(mio_aio::WriteAt::write_at(fd, offset, buf, 0));
+        Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 
     /// Asynchronous equivalent of `pwritev`
@@ -631,9 +387,7 @@ impl File {
     /// Similar to
     /// [pwritev(2)](https://www.freebsd.org/cgi/man.cgi?query=write&sektion=2)
     /// but asynchronous.  Writes a scatter-gather list of buffers into a
-    /// contiguous portion of a file.  Unlike `pwritev`, there is no guarantee
-    /// of overall atomicity.  Each scatter gather element's contents are
-    /// written independently.
+    /// contiguous portion of a file.
     ///
     /// # Parameters
     ///
@@ -644,9 +398,7 @@ impl File {
     ///
     /// - `Ok(x)`:  The operation was successfully created.  The future may be
     ///             polled and will eventually return the final status of the
-    ///             operation.  If the operation was partially successful, the
-    ///             future will complete an error with no indication of which
-    ///             parts of the file were actually written.
+    ///             operation.
     /// - `Err(x)`: An error occurred before issueing the operation.  The result
     ///             may be `drop`ped.
     ///
@@ -654,14 +406,14 @@ impl File {
     ///
     /// ```
     /// use std::fs;
-    /// use std::io::Read;
+    /// use std::io::{IoSlice, Read};
     /// use tempfile::TempDir;
     /// use tokio::runtime;
     ///
     /// const EXPECT: &[u8] = b"abcdefghij";
     /// let wbuf0 = b"abcdef";
     /// let wbuf1 = b"ghij";
-    /// let wbufs = vec![&wbuf0[..], &wbuf1[..]];
+    /// let wbufs = vec![IoSlice::new(wbuf0), IoSlice::new(wbuf1)];
     /// let mut rbuf = Vec::new();
     ///
     /// let dir = TempDir::new().unwrap();
@@ -686,105 +438,18 @@ impl File {
     /// let len = f.read_to_end(&mut rbuf).unwrap();
     /// assert_eq!(len, EXPECT.len());
     /// assert_eq!(rbuf, EXPECT);
-    pub fn writev_at<'a>(&self, bufs: &[&'a [u8]], offset: u64)
+    pub fn writev_at<'a>(&self, bufs: &[IoSlice<'a>], offset: u64)
         -> io::Result<WritevAt<'a>>
     {
-        let mut builder = mio_aio::LioCbBuilder::with_capacity(bufs.len());
-        let mut offs = offset;
         let fd = self.file.as_raw_fd();
-        let mut accumulator: Option<Pin<Box<[u8]>>> = None;
-        if self.sectorsize > 1 &&
-            bufs.iter().any(|buf| buf.len() % self.sectorsize != 0)
-        {
-            let mut accum = Vec::<u8>::new();
-            for buf in bufs.iter() {
-                accum.extend_from_slice(&buf[..]);
-            }
-            accumulator = Some(accum.into_boxed_slice().into());
-            let buf: &'static [u8] = unsafe{
-                // Safe because the liocb's lifetime is equal to accumulator's
-                // (or rather, it will be once we move it into the WritevAt
-                // struct).
-                mem::transmute::<&[u8], &'static [u8]>(
-                    &(accumulator.as_ref().unwrap().as_ref())
-                )
-            };
-            builder = builder.emplace_slice(
-                fd,
-                offs,
-                buf,
-                0,
-                mio_aio::LioOpcode::LIO_WRITE
-            );
-        } else {
-            for buf in bufs {
-                let l = buf.len();
-                builder = builder.emplace_slice(
-                    fd,
-                    offs,
-                    buf,
-                    0,
-                    mio_aio::LioOpcode::LIO_WRITE
-                );
-                offs += l as u64;
-            }
-        }
-        let liocb = builder.finish();
-        let source = WrappedLioCb(liocb);
-        Aio::new_for_lio(source)
-        .map(|pe| 
-             WritevAt {
-                _accumulator: accumulator,
-                op: Some(pe),
-                state: AioState::Allocated,
-            }
-        )
+        let source = TokioSource(mio_aio::WritevAt::writev_at(fd, offset, bufs, 0));
+        Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 }
 
 impl AsRawFd for File {
     fn as_raw_fd(&self) -> RawFd {
         self.file.as_raw_fd()
-    }
-}
-
-impl<'a> Future for AioFut<'a> {
-    type Output = Result<AioResult, nix::Error>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let poll_result = match self.op {
-                AioOp::Fsync(ref mut io) =>
-                    io.poll_ready(cx),
-                AioOp::Read(ref mut io) =>
-                    io.poll_ready(cx),
-                AioOp::Write(ref mut io) =>
-                    io.poll_ready(cx),
-        };
-        match poll_result {
-            Poll::Pending => {
-                if self.state == AioState::Allocated {
-                    let r = match self.op {
-                        AioOp::Fsync(ref mut pe) => (*pe).0
-                            .fsync(mio_aio::AioFsyncMode::O_SYNC),
-                        AioOp::Read(ref mut pe) => (*pe).0.read(),
-                        AioOp::Write(ref mut pe) => (*pe).0.write(),
-                    };
-                    if let Err(e) = r {
-                        return Poll::Ready(Err(e));
-                    }
-                    self.state = AioState::InProgress;
-                }
-                Poll::Pending
-            },
-            Poll::Ready(Err(e)) => conv_poll_err(e),
-            Poll::Ready(Ok(_ev)) => {
-                let result = self.aio_return();
-                match result {
-                    Ok(x) => Poll::Ready(Ok(AioResult{value: x})),
-                    Err(x) => Poll::Ready(Err(x))
-                }
-            }
-        }
     }
 }
 
@@ -798,31 +463,14 @@ mod t {
 
     /// Pet grcov
     #[test]
-    fn debug_aiofut() {
+    fn debug_futures() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("foo");
-
-        let file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(&path)
-            .map(File::new)
-            .unwrap();
-        let rt = runtime::Builder::new_current_thread()
-            .enable_io()
-            .build()
-            .unwrap();
-        rt.block_on(async {
-            let fut = file.sync_all().unwrap();
-            format!("{:?}", fut);
-        });
-    }
-
-    /// Pet grcov
-    #[test]
-    fn debug_file() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("foo");
+        let mut rbuf0 = [];
+        let mut rbuf1 = [];
+        let wbuf0 = [];
+        let wbuf1 = [];
+        let wbufs = [IoSlice::new(&wbuf0), IoSlice::new(&wbuf1)];
 
         let file = fs::OpenOptions::new()
             .write(true)
@@ -831,50 +479,18 @@ mod t {
             .map(File::new)
             .unwrap();
         format!("{:?}", file);
-    }
-
-    /// Pet grcov
-    #[test]
-    fn debug_readv_at() {
-        let mut rbuf0 = vec![0; 0];
-        let mut rbuf1 = vec![0; 0];
-        let mut rbufs = [&mut rbuf0[..], &mut rbuf1[..]];
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("foo");
-        let file = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(&path)
-            .map(File::new)
-            .unwrap();
         let rt = runtime::Builder::new_current_thread()
             .enable_io()
             .build()
             .unwrap();
         rt.block_on(async {
-            let fut = file.readv_at(&mut rbufs[..], 2).unwrap();
-            format!("{:?}", fut);
-        });
-    }
-
-    /// Pet grcov
-    #[test]
-    fn debug_writev_at() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("foo");
-        let file = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(&path)
-            .map(File::new)
-            .unwrap();
-        let rt = runtime::Builder::new_current_thread()
-            .enable_io()
-            .build()
-            .unwrap();
-        rt.block_on(async {
-            let fut = file.writev_at(&[], 0).unwrap();
-            format!("{:?}", fut);
+            format!("{:?}", file.sync_all().unwrap());
+            format!("{:?}", file.read_at(&mut rbuf0, 0).unwrap());
+            let mut rbufs = [IoSliceMut::new(&mut rbuf0),
+                             IoSliceMut::new(&mut rbuf1)];
+            format!("{:?}", file.readv_at(&mut rbufs, 0).unwrap());
+            format!("{:?}", file.write_at(&wbuf0, 0).unwrap());
+            format!("{:?}", file.writev_at(&wbufs, 0).unwrap());
         });
     }
 }

@@ -40,8 +40,8 @@ fn bench_aio_read(bench: &mut Bencher) {
         let len = runtime.block_on(async{
             file.read_at(&mut rbuf[..], 0)
                 .expect("read_at failed early").await
-        }).unwrap().value.unwrap();
-        assert_eq!(len as usize, wbuf.len());
+        }).unwrap();
+        assert_eq!(len, wbuf.len());
     })
 }
 
