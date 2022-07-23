@@ -16,7 +16,7 @@ use tokio_file::File;
 const FLEN: usize = 1<<19;
 
 fn runtime() -> Runtime {
-    runtime::Builder::new_current_thread()
+    runtime::Builder::new_multi_thread()
         .enable_io()
         .build()
         .unwrap()
@@ -36,13 +36,13 @@ fn bench_aio_read(bench: &mut Bencher) {
     let file = File::open(path).unwrap();
 
     let mut rbuf = vec![0u8; FLEN];
-    bench.iter(move || {
+    bench.iter(|| {
         let len = runtime.block_on(async{
             file.read_at(&mut rbuf[..], 0)
                 .expect("read_at failed early").await
         }).unwrap();
         assert_eq!(len, wbuf.len());
-    })
+    });
 }
 
 // For comparison, benchmark the equivalent operation using threads
