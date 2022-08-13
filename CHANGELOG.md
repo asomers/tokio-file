@@ -20,6 +20,9 @@
   matching changes in its dependencies.
   (#[34](https://github.com/asomers/tokio-file/pull/34))
 
+- Updated Nix to 0.25.0
+  (#[35](https://github.com/asomers/tokio-file/pull/35))
+
 ### Removed
 
 - `readv_at` and `writev_at` now require at least FreeBSD 13.0, and they no

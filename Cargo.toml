@@ -20,14 +20,14 @@ targets = [
 [dependencies]
 futures = "0.3.0"
 mio = "0.8.1"
-nix = {git = "http://github.com/nix-rust/nix", rev = "69738c0fd03af19053c5701a984f923ecbbfada6", default-features = false, features = ["aio", "ioctl"] }
-mio-aio = { git = "http://github.com/asomers/mio-aio", rev = "604c410041322eb29d8421478b9b816dd75824b8", features = ["tokio"] }
+nix = { version = "0.25.0", default-features = false, features = ["aio", "ioctl"] }
+mio-aio = { git = "http://github.com/asomers/mio-aio", rev = "6f3fbc36a56a45c2cee675148b3b33d937ac6690", features = ["tokio"] }
 tokio = { version = "1.17.0", features = [ "net" ] }
 
 [dev-dependencies]
 rstest = "0.11.0"
 getopts = "0.2.18"
-nix = {git = "http://github.com/nix-rust/nix", rev = "69738c0fd03af19053c5701a984f923ecbbfada6", default-features = false, features = ["aio", "feature", "ioctl", "user"] }
+nix = { version = "0.25.0", default-features = false, features = ["aio", "feature", "ioctl", "user"] }
 sysctl = "0.1"
 tempfile = "3.0"
 tokio = { version = "1.17.0", features = [ "fs", "io-util", "net", "rt" ] }
