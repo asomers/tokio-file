@@ -225,7 +225,7 @@ mod dev {
     impl Drop for Md {
         fn drop(&mut self) {
             Command::new("mdconfig")
-                .args(&["-d", "-u"])
+                .args(["-d", "-u"])
                 .arg(&self.0)
                 .output()
                 .expect("failed to deallocate md(4) device");
@@ -236,13 +236,13 @@ mod dev {
     fn md() -> Option<Md> {
         if Uid::current().is_root() {
             let output = Command::new("mdconfig")
-                .args(&["-a", "-t",  "swap", "-s", "1m"])
+                .args(["-a", "-t",  "swap", "-s", "1m"])
                 .output()
                 .expect("failed to allocate md(4) device");
             // Strip the trailing "\n"
             let l = output.stdout.len() - 1;
             let mddev = OsStr::from_bytes(&output.stdout[0..l]);
-            Some(Md(Path::new("/dev").join(&mddev)))
+            Some(Md(Path::new("/dev").join(mddev)))
         } else {
             None
         }
