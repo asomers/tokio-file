@@ -23,6 +23,9 @@
 - Updated Nix to 0.25.0
   (#[35](https://github.com/asomers/tokio-file/pull/35))
 
+- Raised MSRV to 1.53.0
+  (#[36](https://github.com/asomers/tokio-file/pull/36))
+
 ### Removed
 
 - `readv_at` and `writev_at` now require at least FreeBSD 13.0, and they no
