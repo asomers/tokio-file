@@ -40,7 +40,8 @@ task:
 task:
   name: FreeBSD 13.1 nightly
   env:
-    VERSION: nightly
+    # Workaround Rust bug https://github.com/rust-lang/rust/issues/104815
+    VERSION: nightly-2022-11-19-x86_64-unknown-freebsd
   << : *SETUP
   test_script:
     - . $HOME/.cargo/env
