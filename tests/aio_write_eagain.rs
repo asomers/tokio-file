@@ -23,7 +23,7 @@ fn write_at_eagain() {
 
     let dir = t!(TempDir::new());
     let path = dir.path().join("write_at_eagain.0");
-    let file = t!(File::open(&path));
+    let file = t!(File::open(path));
 
     let wbuf = vec![0u8; 4096];
 

@@ -211,7 +211,7 @@ impl File {
     ///
     /// let file = fs::OpenOptions::new()
     ///     .read(true)
-    ///     .open(&path)
+    ///     .open(path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
     /// let rt = runtime::Builder::new_current_thread()
@@ -277,7 +277,7 @@ impl File {
     ///
     /// let file = fs::OpenOptions::new()
     ///     .read(true)
-    ///     .open(&path)
+    ///     .open(path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
     /// let rt = runtime::Builder::new_current_thread()
@@ -317,7 +317,7 @@ impl File {
     /// let file = fs::OpenOptions::new()
     ///     .write(true)
     ///     .create(true)
-    ///     .open(&path)
+    ///     .open(path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
     /// let rt = runtime::Builder::new_current_thread()
@@ -367,7 +367,7 @@ impl File {
     /// assert_eq!(r, contents.len());
     /// drop(file);
     ///
-    /// let mut file = fs::File::open(&path).unwrap();
+    /// let mut file = fs::File::open(path).unwrap();
     /// assert_eq!(file.read_to_end(&mut rbuf).unwrap(), contents.len());
     /// assert_eq!(&contents[..], &rbuf[..]);
     /// ```
@@ -434,7 +434,7 @@ impl File {
     ///
     /// assert_eq!(r, 10);
     ///
-    /// let mut f = fs::File::open(&path).unwrap();
+    /// let mut f = fs::File::open(path).unwrap();
     /// let len = f.read_to_end(&mut rbuf).unwrap();
     /// assert_eq!(len, EXPECT.len());
     /// assert_eq!(rbuf, EXPECT);
@@ -475,7 +475,7 @@ mod t {
         let file = fs::OpenOptions::new()
             .write(true)
             .create(true)
-            .open(&path)
+            .open(path)
             .map(File::new)
             .unwrap();
         format!("{:?}", file);
