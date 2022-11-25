@@ -29,7 +29,7 @@ fn metadata() {
     let path = dir.path().join("metadata");
     let mut f = t!(fs::File::create(&path));
     f.write_all(&wbuf).expect("write failed");
-    let file = t!(File::open(&path));
+    let file = t!(File::open(path));
     let metadata = file.metadata().unwrap();
     assert_eq!(9000, metadata.len());
 }
@@ -40,7 +40,7 @@ fn len() {
     let path = dir.path().join("len");
     let f = t!(fs::File::create(&path));
     f.set_len(9000).unwrap();
-    let file = t!(File::open(&path));
+    let file = t!(File::open(path));
     assert_eq!(9000, file.len().unwrap());
 }
 
@@ -55,7 +55,7 @@ fn new_nocreat() {
         .read(true)
         .write(true)
         .create(false)
-        .open(&path)
+        .open(path)
         .map(tokio_file::File::new);
     assert!(r.is_err());
 }
@@ -251,7 +251,7 @@ mod dev {
     #[rstest]
     fn len(md: Option<Md>){
         if let Some(md) = md {
-            let file = t!(File::open(&md.0));
+            let file = t!(File::open(md.0.as_path()));
             let len = file.len().unwrap();
             assert_eq!(len, 1_048_576);
         } else {

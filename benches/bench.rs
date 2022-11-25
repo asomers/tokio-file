@@ -72,7 +72,7 @@ fn bench_threaded_read(bench: &mut Bencher) {
             tx.send(len).expect("sending failed");
         });
         let len = runtime.block_on(rx).expect("receiving failed");
-        assert_eq!(len as usize, FLEN);
+        assert_eq!(len, FLEN);
     });
 }
     
@@ -127,7 +127,7 @@ fn bench_threadpool_read(bench: &mut Bencher) {
         ptxclone.send(Some(opspec)).unwrap();
 
         let len = runtime.block_on(rx).expect("receiving failed");
-        assert_eq!(len as usize, FLEN);
+        assert_eq!(len, FLEN);
     });
     ptx.send(None).unwrap();
 }
@@ -152,6 +152,6 @@ fn bench_tokio_read(bench: &mut Bencher) {
             file.seek(SeekFrom::Start(0)).await.unwrap();
             file.read_exact(&mut rbuf[..]).await
         }).unwrap();
-        assert_eq!(len as usize, wbuf.len());
+        assert_eq!(len, wbuf.len());
     })
 }
