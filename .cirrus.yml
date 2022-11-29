@@ -27,7 +27,7 @@ setup: &SETUP
 task:
   name: FreeBSD 13.1 MSRV
   env:
-    VERSION: 1.53.0
+    VERSION: 1.56.1
   << : *SETUP
   test_script:
     - . $HOME/.cargo/env
