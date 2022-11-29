@@ -20,11 +20,8 @@
   matching changes in its dependencies.
   (#[34](https://github.com/asomers/tokio-file/pull/34))
 
-- Updated Nix to 0.25.0
-  (#[35](https://github.com/asomers/tokio-file/pull/35))
-
-- Raised MSRV to 1.53.0
-  (#[36](https://github.com/asomers/tokio-file/pull/36))
+- Updated Nix to 0.26.1.  This also raises MSRV to 1.56.1.
+  (#[37](https://github.com/asomers/tokio-file/pull/37))
 
 ### Removed
 
