@@ -15,7 +15,6 @@ use futures::{
     task::{Context, Poll}
 };
 use mio_aio::AioFsyncMode;
-use nix::errno::Errno;
 use tokio::io::bsd::{AioSource, Aio};
 
 nix::ioctl_read! {
@@ -30,12 +29,6 @@ nix::ioctl_read! {
 
 nix::ioctl_read! {
     diocgstripesize, 'd', 139, nix::libc::off_t
-}
-
-fn conv_poll_err<T>(e: io::Error) -> Poll<Result<T, nix::Error>> {
-    let raw = e.raw_os_error().unwrap_or(0);
-    let errno = Errno::from_i32(raw);
-    Poll::Ready(Err(errno))
 }
 
 #[derive(Debug)]
@@ -56,7 +49,7 @@ impl<T: mio_aio::SourceApi> AioSource for TokioSource<T> {
 pub struct TokioFileFut<T: mio_aio::SourceApi>(Aio<TokioSource<T>>);
 
 impl<T: mio_aio::SourceApi> Future for TokioFileFut<T> {
-    type Output = Result<T::Output, nix::Error>;
+    type Output = io::Result<T::Output>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let poll_result = self.0.poll_ready(cx);
@@ -66,12 +59,14 @@ impl<T: mio_aio::SourceApi> Future for TokioFileFut<T> {
                     let p = unsafe { self.map_unchecked_mut(|s| &mut s.0.0) };
                     match p.submit() {
                         Ok(()) => (),
-                        Err(e) => return Poll::Ready(Err(e))
+                        Err(e) => return Poll::Ready(Err(
+                            io::Error::from_raw_os_error(e as i32)
+                        ))
                     }
                 }
                 Poll::Pending
             },
-            Poll::Ready(Err(e)) => conv_poll_err(e),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
             Poll::Ready(Ok(_ev)) => {
                 // At this point, we could clear readiness.  But there's no
                 // point, since we're about to drop the Aio.
@@ -79,7 +74,9 @@ impl<T: mio_aio::SourceApi> Future for TokioFileFut<T> {
                 let result = p.aio_return();
                 match result {
                     Ok(r) => Poll::Ready(Ok(r)),
-                    Err(e) => Poll::Ready(Err(e)),
+                    Err(e) => Poll::Ready(Err(
+                        io::Error::from_raw_os_error(e as i32)
+                    ))
                 }
             }
         }

@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use futures::future;
 use tempfile::TempDir;
 use tokio_file::File;
@@ -47,7 +48,7 @@ fn write_at_eagain() {
                 n_ok += 1;
                 assert_eq!(aio_result, 4096);
             },
-            Err(nix::errno::Errno::EAGAIN) => n_eagain += 1,
+            Err(e) if e.kind() == ErrorKind::WouldBlock => n_eagain += 1,
             Err(e) => panic!("unexpected result {:?}", e)
         }
     }
