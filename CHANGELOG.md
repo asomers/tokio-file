@@ -25,7 +25,7 @@
   (#[39](https://github.com/asomers/tokio-file/pull/39))
 
 - Updated Nix to 0.26.1.  This also raises MSRV to 1.56.1.
-  (#[37](https://github.com/asomers/tokio-file/pull/37))
+  (#[38](https://github.com/asomers/tokio-file/pull/38))
 
 ### Removed
 
