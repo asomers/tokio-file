@@ -475,7 +475,7 @@ mod t {
             .open(path)
             .map(File::new)
             .unwrap();
-        format!("{:?}", file);
+        format!("{file:?}");
         let rt = runtime::Builder::new_current_thread()
             .enable_io()
             .build()
