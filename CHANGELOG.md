@@ -24,8 +24,11 @@
   consumers' builds less dependent on the precise version of Nix in use.
   (#[39](https://github.com/asomers/tokio-file/pull/39))
 
-- Updated Nix to 0.26.1.  This also raises MSRV to 1.56.1.
+- Updated Nix to 0.26.1.
   (#[38](https://github.com/asomers/tokio-file/pull/38))
+
+- Raised MSRV to 1.58.0
+  (#[40](https://github.com/asomers/tokio-file/pull/40))
 
 ### Removed
 
