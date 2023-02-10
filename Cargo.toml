@@ -25,7 +25,7 @@ mio-aio = { git = "http://github.com/asomers/mio-aio", rev = "69974fb", features
 tokio = { version = "1.17.0", features = [ "net" ] }
 
 [dev-dependencies]
-rstest = "0.11.0"
+rstest = "0.16.0"
 getopts = "0.2.18"
 nix = { version = "0.26.1", default-features = false, features = ["aio", "feature", "ioctl", "user"] }
 sysctl = "0.1"
