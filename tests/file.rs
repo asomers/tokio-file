@@ -64,7 +64,7 @@ fn new_nocreat() {
 fn read_at() {
     const WBUF: &[u8] = b"abcdef";
     const EXPECT: &[u8] = b"cdef";
-    let mut rbuf = vec![0; 4];
+    let mut rbuf = [0; 4];
     let off = 2;
 
     let dir = t!(TempDir::new());
@@ -86,8 +86,8 @@ fn readv_at() {
     const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
     const EXPECT0: &[u8] = b"cdef";
     const EXPECT1: &[u8] = b"ghijklmn";
-    let mut rbuf0 = vec![0; 4];
-    let mut rbuf1 = vec![0; 8];
+    let mut rbuf0 = [0; 4];
+    let mut rbuf1 = [0; 8];
     {
         let mut rbufs = [IoSliceMut::new(&mut rbuf0[..]),
             IoSliceMut::new(&mut rbuf1[..])];
