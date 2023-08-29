@@ -25,7 +25,7 @@ mio-aio = { version = "0.8.0", features = ["tokio"] }
 tokio = { version = "1.19.0", features = [ "net" ] }
 
 [dev-dependencies]
-rstest = "0.16.0"
+rstest = "0.18.0"
 getopts = "0.2.18"
 nix = {version = "0.27.0", default-features = false, features = ["user"] }
 sysctl = "0.1"
