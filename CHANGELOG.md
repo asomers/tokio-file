@@ -30,6 +30,10 @@
 - Raised MSRV to 1.63.0
   (#[41](https://github.com/asomers/tokio-file/pull/41))
   (#[44](https://github.com/asomers/tokio-file/pull/44))
+  (#[45](https://github.com/asomers/tokio-file/pull/45))
+
+- Update Nix and mio-aio dependencies.  See mio-aio (#[38](https://github.com/asomers/mio-aio/pull/38 for motivation.)).
+  (#[45](https://github.com/asomers/tokio-file/pull/45))
 
 ### Removed
 
