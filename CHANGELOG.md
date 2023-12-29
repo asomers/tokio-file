@@ -1,3 +1,11 @@
+## [Unreleased] - ReleaseDate
+
+### Changed
+
+- Raised MSRV to 1.66.0.
+  (#[48](https://github.com/asomers/tokio-file/pull/48))
+
+
 ## [0.9.0] - 2023-08-29
 
 ### Changed
