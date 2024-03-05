@@ -108,7 +108,7 @@ pub struct File {
 }
 
 // is_empty doesn't make much sense for files
-#[cfg_attr(feature = "cargo-clippy", allow(clippy::len_without_is_empty))]
+#[allow(clippy::len_without_is_empty)]
 impl File {
     /// Get the file's size in bytes
     pub fn len(&self) -> io::Result<u64> {
@@ -184,6 +184,7 @@ impl File {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(path)
             .map(File::new)
     }
@@ -453,7 +454,6 @@ impl AsRawFd for File {
 // LCOV_EXCL_START
 #[cfg(test)]
 mod t {
-    use std::fs;
     use tempfile::TempDir;
     use tokio::runtime;
     use super::*;
@@ -472,6 +472,7 @@ mod t {
         let file = fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path)
             .map(File::new)
             .unwrap();
