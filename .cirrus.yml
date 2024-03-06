@@ -1,5 +1,5 @@
 freebsd_instance:
-  image: freebsd-13-2-release-amd64
+  image: freebsd-13-3-release-amd64
 
 setup: &SETUP
   env:
@@ -25,7 +25,7 @@ setup: &SETUP
     fingerprint_script: cat Cargo.lock || echo ""
 
 task:
-  name: FreeBSD 13.2 MSRV
+  name: FreeBSD 13.3 MSRV
   env:
     VERSION: 1.66.0
   << : *SETUP
@@ -38,7 +38,7 @@ task:
   before_cache_script: rm -rf $HOME/.cargo/registry/index
 
 task:
-  name: FreeBSD 13.2 nightly
+  name: FreeBSD 13.3 nightly
   env:
     # Workaround Rust bug https://github.com/rust-lang/rust/issues/104815
     VERSION: nightly-2022-11-19-x86_64-unknown-freebsd
@@ -53,7 +53,8 @@ task:
     - cargo +$VERSION clippy --all-features --all-targets -- -D warnings
   audit_script:
     - . $HOME/.cargo/env
-    - pkg install -y cargo-audit
+    # install ca_root_nss due to https://github.com/rustsec/rustsec/issues/1137
+    - pkg install -y ca_root_nss cargo-audit
     - cargo audit
   # Test our minimal version spec
   minver_test_script:
