@@ -194,10 +194,10 @@ impl File {
     /// # Examples
     ///
     /// ```
+    /// # tokio_test::block_on(async {
     /// use std::fs;
     /// use std::io::Write;
     /// use tempfile::TempDir;
-    /// use tokio::runtime;
     ///
     /// const WBUF: &[u8] = b"abcdef";
     /// const EXPECT: &[u8] = b"cdef";
@@ -212,14 +212,12 @@ impl File {
     ///     .open(path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let rt = runtime::Builder::new_current_thread()
-    ///     .enable_io()
-    ///     .build()
+    /// file.read_at(&mut rbuf[..], 2)
+    ///     .unwrap()
+    ///     .await
     ///     .unwrap();
-    /// let r = rt.block_on(async {
-    ///     file.read_at(&mut rbuf[..], 2).unwrap().await
-    /// }).unwrap();
     /// assert_eq!(&rbuf[..], &EXPECT[..]);
+    /// # })
     /// ```
     pub fn read_at<'a>(&self, buf: &'a mut [u8], offset: u64)
         -> io::Result<ReadAt<'a>>
@@ -253,11 +251,11 @@ impl File {
     /// # Examples
     ///
     /// ```
+    /// # tokio_test::block_on(async {
     /// use std::borrow::BorrowMut;
     /// use std::fs;
     /// use std::io::{IoSliceMut, Write};
     /// use tempfile::TempDir;
-    /// use tokio::runtime;
     ///
     /// const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
     /// const EXPECT0: &[u8] = b"cdef";
@@ -278,17 +276,12 @@ impl File {
     ///     .open(path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let rt = runtime::Builder::new_current_thread()
-    ///     .enable_io()
-    ///     .build()
-    ///     .unwrap();
-    /// let mut r = rt.block_on(async {
-    ///     file.readv_at(&mut rbufs[..], 2).unwrap().await
-    /// }).unwrap();
+    /// let r = file.readv_at(&mut rbufs[..], 2).unwrap().await.unwrap();
     ///
     /// assert_eq!(l0 + l1, r);
     /// assert_eq!(&rbuf0[..], &EXPECT0[..]);
     /// assert_eq!(&rbuf1[..], &EXPECT1[..]);
+    /// # })
     /// ```
     pub fn readv_at<'a>(&self, bufs: &'a mut [IoSliceMut<'a>],
                         offset: u64) -> io::Result<ReadvAt<'a>>
@@ -303,6 +296,7 @@ impl File {
     /// # Examples
     ///
     /// ```
+    /// # tokio_test::block_on(async {
     /// use std::borrow::BorrowMut;
     /// use std::fs;
     /// use std::io::Write;
@@ -318,13 +312,8 @@ impl File {
     ///     .open(path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let rt = runtime::Builder::new_current_thread()
-    ///     .enable_io()
-    ///     .build()
-    ///     .unwrap();
-    /// let r = rt.block_on(async {
-    ///     file.sync_all().unwrap().await
-    /// }).unwrap();
+    /// file.sync_all().unwrap().await.unwrap();
+    /// # })
     /// ```
     // TODO: add sync_all_data, for supported operating systems
     pub fn sync_all(&self) -> io::Result<SyncAll> {
@@ -339,10 +328,10 @@ impl File {
     /// # Examples
     ///
     /// ```
+    /// # tokio_test::block_on(async {
     /// use std::fs;
     /// use std::io::Read;
     /// use tempfile::TempDir;
-    /// use tokio::runtime;
     ///
     /// let contents = b"abcdef";
     /// let mut rbuf = Vec::new();
@@ -355,19 +344,14 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let rt = runtime::Builder::new_current_thread()
-    ///     .enable_io()
-    ///     .build()
-    ///     .unwrap();
-    /// let r = rt.block_on(async {
-    ///     file.write_at(contents, 0).unwrap().await
-    /// }).unwrap();
+    /// let r = file.write_at(contents, 0).unwrap().await.unwrap();
     /// assert_eq!(r, contents.len());
     /// drop(file);
     ///
     /// let mut file = fs::File::open(path).unwrap();
     /// assert_eq!(file.read_to_end(&mut rbuf).unwrap(), contents.len());
     /// assert_eq!(&contents[..], &rbuf[..]);
+    /// # })
     /// ```
     pub fn write_at<'a>(
         &self,
@@ -403,10 +387,10 @@ impl File {
     /// # Examples
     ///
     /// ```
+    /// # tokio_test::block_on(async {
     /// use std::fs;
     /// use std::io::{IoSlice, Read};
     /// use tempfile::TempDir;
-    /// use tokio::runtime;
     ///
     /// const EXPECT: &[u8] = b"abcdefghij";
     /// let wbuf0 = b"abcdef";
@@ -422,13 +406,7 @@ impl File {
     ///     .open(&path)
     ///     .map(tokio_file::File::new)
     ///     .unwrap();
-    /// let rt = runtime::Builder::new_current_thread()
-    ///     .enable_io()
-    ///     .build()
-    ///     .unwrap();
-    /// let r = rt.block_on(async {
-    ///     file.writev_at(&wbufs[..], 0).unwrap().await
-    /// }).unwrap();
+    /// let r = file.writev_at(&wbufs[..], 0).unwrap().await.unwrap();
     ///
     /// assert_eq!(r, 10);
     ///
@@ -436,6 +414,8 @@ impl File {
     /// let len = f.read_to_end(&mut rbuf).unwrap();
     /// assert_eq!(len, EXPECT.len());
     /// assert_eq!(rbuf, EXPECT);
+    /// # })
+    /// ```
     pub fn writev_at<'a>(&self, bufs: &[IoSlice<'a>], offset: u64)
         -> io::Result<WritevAt<'a>>
     {
