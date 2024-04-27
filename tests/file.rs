@@ -6,20 +6,12 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 use tokio_file::File;
-use tokio::runtime::{self, Runtime};
 
 macro_rules! t {
     ($e:expr) => (match $e {
         Ok(e) => e,
         Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
     })
-}
-
-fn runtime() -> Runtime {
-    runtime::Builder::new_current_thread()
-        .enable_io()
-        .build()
-        .unwrap()
 }
 
 #[test]
@@ -60,8 +52,8 @@ fn new_nocreat() {
     assert!(r.is_err());
 }
 
-#[test]
-fn read_at() {
+#[tokio::test]
+async fn read_at() {
     const WBUF: &[u8] = b"abcdef";
     const EXPECT: &[u8] = b"cdef";
     let mut rbuf = [0; 4];
@@ -72,17 +64,16 @@ fn read_at() {
     let mut f = t!(fs::File::create(&path));
     f.write_all(WBUF).expect("write failed");
     let file = t!(File::open(&path));
-    let rt = runtime();
-    let r = rt.block_on(async {
-        file.read_at(&mut rbuf[..], off).expect("read_at failed early").await
-    }).unwrap();
+    let r = file.read_at(&mut rbuf[..], off)
+        .expect("read_at failed early").await
+        .unwrap();
     assert_eq!(r, EXPECT.len());
 
     assert_eq!(&rbuf[..], EXPECT);
 }
 
-#[test]
-fn readv_at() {
+#[tokio::test]
+async fn readv_at() {
     const WBUF: &[u8] = b"abcdefghijklmnopqrwtuvwxyz";
     const EXPECT0: &[u8] = b"cdef";
     const EXPECT1: &[u8] = b"ghijklmn";
@@ -98,11 +89,10 @@ fn readv_at() {
         let mut f = t!(fs::File::create(&path));
         f.write_all(WBUF).expect("write failed");
         let file = t!(File::open(&path));
-        let rt = runtime();
-        let r = rt.block_on(async {
-            file.readv_at(&mut rbufs[..], off).expect("readv_at failed early")
-                .await
-        }).unwrap();
+        let r = file.readv_at(&mut rbufs[..], off)
+            .expect("readv_at failed early")
+            .await
+            .unwrap();
         assert_eq!(12, r);
     }
 
@@ -110,8 +100,8 @@ fn readv_at() {
     assert_eq!(&rbuf1[..], EXPECT1);
 }
 
-#[test]
-fn sync_all() {
+#[tokio::test]
+async fn sync_all() {
     const WBUF: &[u8] = b"abcdef";
 
     let dir = t!(TempDir::new());
@@ -119,24 +109,24 @@ fn sync_all() {
     let mut f = t!(fs::File::create(&path));
     f.write_all(WBUF).expect("write failed");
     let file = t!(File::open(&path));
-    let rt = runtime();
-    rt.block_on(async {
-        file.sync_all().expect("sync_all failed early").await
-    }).unwrap();
+    file.sync_all()
+        .expect("sync_all failed early")
+        .await
+        .unwrap();
 }
 
-#[test]
-fn write_at() {
+#[tokio::test]
+async fn write_at() {
     let wbuf = b"abcdef";
     let mut rbuf = Vec::new();
 
     let dir = t!(TempDir::new());
     let path = dir.path().join("write_at");
     let file = t!(File::open(&path));
-    let rt = runtime();
-    let r = rt.block_on(async {
-        file.write_at(wbuf, 0).expect("write_at failed early").await
-    }).unwrap();
+    let r = file.write_at(wbuf, 0)
+        .expect("write_at failed early")
+        .await
+        .unwrap();
     assert_eq!(r, wbuf.len());
 
     let mut f = t!(fs::File::open(&path));
@@ -145,8 +135,8 @@ fn write_at() {
     assert_eq!(&wbuf[..], &rbuf[..]);
 }
 
-#[test]
-fn writev_at() {
+#[tokio::test]
+async fn writev_at() {
     const EXPECT: &[u8] = b"abcdefghij";
     let wbuf0 = b"abcdef";
     let wbuf1 = b"ghij";
@@ -156,10 +146,10 @@ fn writev_at() {
     let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at");
     let file = t!(File::open(&path));
-    let rt = runtime();
-    let r = rt.block_on(async {
-        file.writev_at(&wbufs[..], 0).expect("writev_at failed early").await
-    }).unwrap();
+    let r = file.writev_at(&wbufs[..], 0)
+        .expect("writev_at failed early")
+        .await
+        .unwrap();
     assert_eq!(r, wbuf0.len() + wbuf1.len());
 
     let mut f = t!(fs::File::open(&path));
@@ -168,8 +158,8 @@ fn writev_at() {
     assert_eq!(rbuf, EXPECT);
 }
 
-#[test]
-fn write_at_static() {
+#[tokio::test]
+async fn write_at_static() {
     const WBUF: &[u8] = b"abcdef";
     let mut rbuf = Vec::new();
 
@@ -177,10 +167,10 @@ fn write_at_static() {
     let path = dir.path().join("write_at");
     {
         let file = t!(File::open(&path));
-        let rt = runtime();
-        let r = rt.block_on(async {
-            file.write_at(WBUF, 0).expect("write_at failed early").await
-        }).unwrap();
+        let r = file.write_at(WBUF, 0)
+            .expect("write_at failed early")
+            .await
+            .unwrap();
         assert_eq!(r, WBUF.len());
     }
 
@@ -190,8 +180,8 @@ fn write_at_static() {
     assert_eq!(rbuf, WBUF);
 }
 
-#[test]
-fn writev_at_static() {
+#[tokio::test]
+async fn writev_at_static() {
     const EXPECT: &[u8] = b"abcdefghi";
     const WBUF0: &[u8] = b"abcdef";
     const WBUF1: &[u8] = b"ghi";
@@ -201,10 +191,10 @@ fn writev_at_static() {
     let dir = t!(TempDir::new());
     let path = dir.path().join("writev_at_static");
     let file = t!(File::open(&path));
-    let rt = runtime();
-    let r = rt.block_on(async {
-        file.writev_at(&wbufs[..], 0).expect("writev_at failed early").await
-    }).unwrap();
+    let r = file.writev_at(&wbufs[..], 0)
+        .expect("writev_at failed early")
+        .await
+        .unwrap();
     assert_eq!(r, WBUF0.len() + WBUF1.len());
 
     let mut f = t!(fs::File::open(&path));

@@ -2,7 +2,6 @@ use std::io::ErrorKind;
 use futures::future;
 use tempfile::TempDir;
 use tokio_file::File;
-use tokio::runtime;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -13,8 +12,8 @@ macro_rules! t {
 
 // A write_at call fails with EAGAIN.  This test must run in its own process
 // since it intentionally uses all of the system's AIO resources.
-#[test]
-fn write_at_eagain() {
+#[tokio::test]
+async fn write_at_eagain() {
     let limit = sysctl::value("vfs.aio.max_aio_queue_per_proc").unwrap();
     let count = if let sysctl::CtlValue::Int(x) = limit {
         (2 * x) as usize
@@ -28,17 +27,10 @@ fn write_at_eagain() {
 
     let wbuf = vec![0u8; 4096];
 
-    let rt = runtime::Builder::new_current_thread()
-        .enable_io()
-        .build()
-        .unwrap();
-
-    let results = rt.block_on(async {
-        let futs = (0..count).map(|i| {
-            file.write_at(&wbuf[..], 4096 * i as u64).unwrap()
-        });
-        future::join_all(futs).await
+    let futs = (0..count).map(|i| {
+        file.write_at(&wbuf[..], 4096 * i as u64).unwrap()
     });
+    let results = future::join_all(futs).await;
 
     let mut n_ok = 0;
     let mut n_eagain = 0;

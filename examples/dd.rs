@@ -10,11 +10,8 @@
 use futures::{StreamExt, stream};
 use getopts::Options;
 use std::{
-    cell::Cell,
     env,
-    rc::Rc,
     str::FromStr};
-use tokio::runtime;
 use tokio_file::File;
 
 struct Dd {
@@ -22,7 +19,6 @@ struct Dd {
     pub count: usize,
     pub infile: File,
     pub outfile: File,
-    pub ofs: Cell<u64>,
 }
 
 impl Dd {
@@ -34,7 +30,7 @@ impl Dd {
             count,
             infile: inf.unwrap(),
             outfile: outf.unwrap(),
-            ofs: Cell::new(0)}
+        }
     }
 }
 
@@ -44,7 +40,8 @@ fn usage(opts: Options) {
 }
 
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     let mut opts = Options::new();
     opts.optopt("b", "blocksize", "Block size in bytes", "BS");
     opts.optopt("c", "count", "Number of blocks to copy", "COUNT");
@@ -68,31 +65,24 @@ fn main() {
     let infile = &matches.free[0];
     let outfile = &matches.free[1];
 
-    let dd = Rc::new(Dd::new(infile.as_str(), outfile.as_str(), bs, count));
-    let rt = runtime::Builder::new_current_thread()
-        .enable_io()
-        .build()
-        .unwrap();
+    let dd = Dd::new(infile.as_str(), outfile.as_str(), bs, count);
+    let ddr = &dd;
     // Note: this simple example will fail if infile isn't big enough.  A
     // robust program would use try_for_each instead of for_each so it can
     // exit early.
     let stream = stream::iter(0..dd.count);
-    rt.block_on(async {
-        stream.for_each(|blocknum| {
-            let ddc = dd.clone();
-            async move {
-                let mut rbuf = vec![0; bs];
-                let ofs: u64 = (ddc.bs * blocknum) as u64;
-                ddc.infile.read_at(&mut rbuf[..], ofs)
-                .unwrap()
-                .await
-                .unwrap();
-                let r = ddc.outfile.write_at(&rbuf[..], ddc.ofs.get())
-                .unwrap()
-                .await
-                .unwrap();
-                ddc.ofs.set(ddc.ofs.get() + r as u64);
-            }
-        }).await
-    })
+    stream.for_each(|blocknum| {
+        async move {
+            let mut rbuf = vec![0; bs];
+            let ofs: u64 = (ddr.bs * blocknum) as u64;
+            ddr.infile.read_at(&mut rbuf[..], ofs)
+            .unwrap()
+            .await
+            .unwrap();
+            ddr.outfile.write_at(&rbuf[..], ofs)
+            .unwrap()
+            .await
+            .unwrap();
+        }
+    }).await
 }
