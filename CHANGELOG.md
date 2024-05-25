@@ -9,8 +9,9 @@
 
 ### Changed
 
-- Raised MSRV to 1.66.0.
+- Raised MSRV to 1.69.0.
   (#[48](https://github.com/asomers/tokio-file/pull/48))
+  (#[53](https://github.com/asomers/tokio-file/pull/53))
 
 ### Removed
 
