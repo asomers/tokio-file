@@ -58,7 +58,7 @@ task:
   # Test our minimal version spec
   minver_test_script:
     - . $HOME/.cargo/env
-    - cargo +$VERSION update -Zminimal-versions
+    - cargo +$VERSION update -Zdirect-minimal-versions
     - cargo +$VERSION check --all-targets
     - cargo +$VERSION doc --no-deps
   before_cache_script: rm -rf $HOME/.cargo/registry/index

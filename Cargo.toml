@@ -19,11 +19,11 @@ targets = [
 ]
 
 [dependencies]
-futures = "0.3.0"
-mio = "0.8.1"
+futures = "0.3.21"
+mio = "0.8.11"
 nix = { version = "0.29.0", default-features = false, features = ["ioctl"] }
 mio-aio = { version = "0.9.0", features = ["tokio"] }
-tokio = { version = "1.19.0", features = [ "net" ] }
+tokio = { version = "1.27.0", features = [ "net" ] }
 
 [dev-dependencies]
 rstest = "0.18.0"
@@ -31,7 +31,7 @@ getopts = "0.2.18"
 nix = {version = "0.29.0", default-features = false, features = ["user"] }
 sysctl = "0.1"
 tempfile = "3.4"
-tokio = { version = "1.19.0", features = [ "fs", "io-util", "macros", "net", "rt", "rt-multi-thread" ] }
+tokio = { version = "1.27.0", features = [ "fs", "io-util", "macros", "net", "rt", "rt-multi-thread" ] }
 tokio-test = "0.4.4"
 
 [[test]]
