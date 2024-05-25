@@ -1,10 +1,20 @@
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- Added an extention trait: `AioFileExt`.  It's implemented on everything that
+  implements `AsFd`.  Noteably, these methods use I/O safety, which the old
+  `tokio_file::File` methods did not.
+  (#[53](https://github.com/asomers/tokio-file/pull/53))
+
 ### Changed
 
 - Raised MSRV to 1.66.0.
   (#[48](https://github.com/asomers/tokio-file/pull/48))
 
+### Removed
+
+- Deprecated `File`.  Use the `AioFileExt` trait instead.
 
 ## [0.9.0] - 2023-08-29
 

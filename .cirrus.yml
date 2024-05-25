@@ -27,7 +27,7 @@ setup: &SETUP
 task:
   name: FreeBSD 13.3 MSRV
   env:
-    VERSION: 1.66.0
+    VERSION: 1.69.0
   << : *SETUP
   test_script:
     - . $HOME/.cargo/env
@@ -40,8 +40,7 @@ task:
 task:
   name: FreeBSD 13.3 nightly
   env:
-    # Workaround Rust bug https://github.com/rust-lang/rust/issues/104815
-    VERSION: nightly-2022-11-19-x86_64-unknown-freebsd
+    VERSION: nightly
   << : *SETUP
   test_script:
     - . $HOME/.cargo/env
@@ -59,7 +58,7 @@ task:
   # Test our minimal version spec
   minver_test_script:
     - . $HOME/.cargo/env
-    - cargo +$VERSION update -Zminimal-versions
+    - cargo +$VERSION update -Zdirect-minimal-versions
     - cargo +$VERSION check --all-targets
     - cargo +$VERSION doc --no-deps
   before_cache_script: rm -rf $HOME/.cargo/registry/index

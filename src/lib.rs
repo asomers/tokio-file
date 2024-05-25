@@ -42,4 +42,6 @@
 
 mod file;
 
-pub use file::{File, ReadAt, ReadvAt, SyncAll, WriteAt, WritevAt};
+pub use file::{AioFileExt, ReadAt, ReadvAt, SyncAll, WriteAt, WritevAt};
+#[allow(deprecated)]
+pub use file::File;

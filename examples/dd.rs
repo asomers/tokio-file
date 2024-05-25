@@ -11,9 +11,12 @@ use futures::{StreamExt, stream};
 use getopts::Options;
 use std::{
     env,
-    str::FromStr};
-use tokio_file::File;
+    str::FromStr
+};
+use tokio::fs::File;
+use tokio_file::AioFileExt;
 
+#[derive(Debug)]
 struct Dd {
     pub bs: usize,
     pub count: usize,
@@ -22,14 +25,14 @@ struct Dd {
 }
 
 impl Dd {
-    pub fn new(infile: &str, outfile: &str, bs: usize, count: usize) -> Dd {
-        let inf = File::open(infile);
-        let outf = File::open(outfile);
+    pub async fn new(infn: &str, outfn: &str, bs: usize, count: usize) -> Dd {
+        let infile = File::open(infn).await.unwrap();
+        let outfile = File::create(outfn).await.unwrap();
         Dd {
             bs,
             count,
-            infile: inf.unwrap(),
-            outfile: outf.unwrap(),
+            infile,
+            outfile,
         }
     }
 }
@@ -38,7 +41,6 @@ fn usage(opts: Options) {
     let brief = "Usage: dd [options] <INFILE> <OUTFILE>";
     print!("{}", opts.usage(brief));
 }
-
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -65,24 +67,26 @@ async fn main() {
     let infile = &matches.free[0];
     let outfile = &matches.free[1];
 
-    let dd = Dd::new(infile.as_str(), outfile.as_str(), bs, count);
+    let dd = Dd::new(infile.as_str(), outfile.as_str(), bs, count).await;
     let ddr = &dd;
+
     // Note: this simple example will fail if infile isn't big enough.  A
     // robust program would use try_for_each instead of for_each so it can
     // exit early.
-    let stream = stream::iter(0..dd.count);
-    stream.for_each(|blocknum| {
-        async move {
+    stream::iter(0..dd.count)
+        .for_each(|blocknum: usize| async move {
             let mut rbuf = vec![0; bs];
             let ofs: u64 = (ddr.bs * blocknum) as u64;
-            ddr.infile.read_at(&mut rbuf[..], ofs)
-            .unwrap()
-            .await
-            .unwrap();
-            ddr.outfile.write_at(&rbuf[..], ofs)
-            .unwrap()
-            .await
-            .unwrap();
-        }
-    }).await
+            ddr.infile
+                .read_at(&mut rbuf[..], ofs)
+                .unwrap()
+                .await
+                .unwrap();
+            ddr.outfile
+                .write_at(&rbuf[..], ofs)
+                .unwrap()
+                .await
+                .unwrap();
+        })
+        .await;
 }

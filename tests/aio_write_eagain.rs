@@ -1,14 +1,10 @@
-use std::io::ErrorKind;
+use std::{
+    fs::File,
+    io::ErrorKind
+};
 use futures::future;
 use tempfile::TempDir;
-use tokio_file::File;
-
-macro_rules! t {
-    ($e:expr) => (match $e {
-        Ok(e) => e,
-        Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
-    })
-}
+use tokio_file::AioFileExt;
 
 // A write_at call fails with EAGAIN.  This test must run in its own process
 // since it intentionally uses all of the system's AIO resources.
@@ -21,9 +17,9 @@ async fn write_at_eagain() {
         panic!("sysctl: {:?}", limit);
     };
 
-    let dir = t!(TempDir::new());
+    let dir = TempDir::new().unwrap();
     let path = dir.path().join("write_at_eagain.0");
-    let file = t!(File::open(path));
+    let file = File::create(path).unwrap();
 
     let wbuf = vec![0u8; 4096];
 
