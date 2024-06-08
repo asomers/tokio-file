@@ -6,7 +6,7 @@ authors = ["Alan Somers <asomers@gmail.com>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/asomers/tokio-file"
-rust-version = "1.69"
+rust-version = "1.70"
 description = """
 Asynchronous file I/O for Tokio
 """
@@ -28,6 +28,7 @@ tokio = { version = "1.27.0", features = [ "net" ] }
 [dev-dependencies]
 rstest = "0.18.0"
 getopts = "0.2.18"
+mdconfig = "0.2.0"
 nix = {version = "0.29.0", default-features = false, features = ["user"] }
 sysctl = "0.1"
 tempfile = "3.4"
