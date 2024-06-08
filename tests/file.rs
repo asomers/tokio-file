@@ -1,9 +1,5 @@
-use nix::unistd::Uid;
-use std::ffi::OsStr;
 use std::fs;
 use std::io::{IoSlice, IoSliceMut, Read, Write};
-use std::path::Path;
-use std::process::Command;
 use tempfile::TempDir;
 
 macro_rules! t {
@@ -370,41 +366,18 @@ mod file {
     mod dev {
         use super::*;
 
+        use mdconfig::Md;
         use rstest::{fixture, rstest};
-        use std::os::unix::ffi::OsStrExt;
-        use std::path::PathBuf;
-
-        struct Md(PathBuf);
-        impl Drop for Md {
-            fn drop(&mut self) {
-                Command::new("mdconfig")
-                    .args(["-d", "-u"])
-                    .arg(&self.0)
-                    .output()
-                    .expect("failed to deallocate md(4) device");
-            }
-        }
 
         #[fixture]
         fn md() -> Option<Md> {
-            if Uid::current().is_root() {
-                let output = Command::new("mdconfig")
-                    .args(["-a", "-t",  "swap", "-s", "1m"])
-                    .output()
-                    .expect("failed to allocate md(4) device");
-                // Strip the trailing "\n"
-                let l = output.stdout.len() - 1;
-                let mddev = OsStr::from_bytes(&output.stdout[0..l]);
-                Some(Md(Path::new("/dev").join(mddev)))
-            } else {
-                None
-            }
+            mdconfig::Builder::swap(1 << 20).create().ok()
         }
 
         #[rstest]
         fn len(md: Option<Md>){
             if let Some(md) = md {
-                let file = t!(File::open(md.0.as_path()));
+                let file = t!(File::open(md.path()));
                 let len = file.len().unwrap();
                 assert_eq!(len, 1_048_576);
             } else {
