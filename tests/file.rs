@@ -1,12 +1,17 @@
-use std::fs;
-use std::io::{IoSlice, IoSliceMut, Read, Write};
+use std::{
+    fs,
+    io::{IoSlice, IoSliceMut, Read, Write},
+};
+
 use tempfile::TempDir;
 
 macro_rules! t {
-    ($e:expr) => (match $e {
-        Ok(e) => e,
-        Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
-    })
+    ($e:expr) => {
+        match $e {
+            Ok(e) => e,
+            Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
+        }
+    };
 }
 
 mod aio_file_ext {
@@ -27,8 +32,10 @@ mod aio_file_ext {
         let mut f = fs::File::create(&path).unwrap();
         f.write_all(WBUF).expect("write failed");
         let file = File::open(&path).await.unwrap();
-        let r = file.read_at(&mut rbuf[..], off)
-            .expect("read_at failed early").await
+        let r = file
+            .read_at(&mut rbuf[..], off)
+            .expect("read_at failed early")
+            .await
             .unwrap();
         assert_eq!(r, EXPECT.len());
 
@@ -43,8 +50,10 @@ mod aio_file_ext {
         let mut rbuf0 = [0; 4];
         let mut rbuf1 = [0; 8];
         {
-            let mut rbufs = [IoSliceMut::new(&mut rbuf0[..]),
-                IoSliceMut::new(&mut rbuf1[..])];
+            let mut rbufs = [
+                IoSliceMut::new(&mut rbuf0[..]),
+                IoSliceMut::new(&mut rbuf1[..]),
+            ];
             let off = 2;
 
             let dir = TempDir::new().unwrap();
@@ -52,7 +61,8 @@ mod aio_file_ext {
             let mut f = fs::File::create(&path).unwrap();
             f.write_all(WBUF).expect("write failed");
             let file = File::open(&path).await.unwrap();
-            let r = file.readv_at(&mut rbufs[..], off)
+            let r = file
+                .readv_at(&mut rbufs[..], off)
                 .expect("readv_at failed early")
                 .await
                 .unwrap();
@@ -86,7 +96,8 @@ mod aio_file_ext {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("write_at");
         let file = File::create(&path).await.unwrap();
-        let r = file.write_at(wbuf, 0)
+        let r = file
+            .write_at(wbuf, 0)
             .expect("write_at failed early")
             .await
             .unwrap();
@@ -107,7 +118,8 @@ mod aio_file_ext {
         let path = dir.path().join("write_at");
         {
             let file = File::create(&path).await.unwrap();
-            let r = file.write_at(WBUF, 0)
+            let r = file
+                .write_at(WBUF, 0)
                 .expect("write_at failed early")
                 .await
                 .unwrap();
@@ -131,7 +143,8 @@ mod aio_file_ext {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("writev_at");
         let file = File::create(&path).await.unwrap();
-        let r = file.writev_at(&wbufs[..], 0)
+        let r = file
+            .writev_at(&wbufs[..], 0)
             .expect("writev_at failed early")
             .await
             .unwrap();
@@ -154,7 +167,8 @@ mod aio_file_ext {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("writev_at_static");
         let file = File::create(&path).await.unwrap();
-        let r = file.writev_at(&wbufs[..], 0)
+        let r = file
+            .writev_at(&wbufs[..], 0)
             .expect("writev_at failed early")
             .await
             .unwrap();
@@ -165,13 +179,13 @@ mod aio_file_ext {
         assert_eq!(len, EXPECT.len());
         assert_eq!(rbuf, EXPECT);
     }
-
 }
 
 #[allow(deprecated)]
 mod file {
-    use super::*;
     use tokio_file::File;
+
+    use super::*;
 
     #[test]
     fn metadata() {
@@ -223,8 +237,10 @@ mod file {
         let mut f = t!(fs::File::create(&path));
         f.write_all(WBUF).expect("write failed");
         let file = t!(File::open(&path));
-        let r = file.read_at(&mut rbuf[..], off)
-            .expect("read_at failed early").await
+        let r = file
+            .read_at(&mut rbuf[..], off)
+            .expect("read_at failed early")
+            .await
             .unwrap();
         assert_eq!(r, EXPECT.len());
 
@@ -239,8 +255,10 @@ mod file {
         let mut rbuf0 = [0; 4];
         let mut rbuf1 = [0; 8];
         {
-            let mut rbufs = [IoSliceMut::new(&mut rbuf0[..]),
-                IoSliceMut::new(&mut rbuf1[..])];
+            let mut rbufs = [
+                IoSliceMut::new(&mut rbuf0[..]),
+                IoSliceMut::new(&mut rbuf1[..]),
+            ];
             let off = 2;
 
             let dir = t!(TempDir::new());
@@ -248,7 +266,8 @@ mod file {
             let mut f = t!(fs::File::create(&path));
             f.write_all(WBUF).expect("write failed");
             let file = t!(File::open(&path));
-            let r = file.readv_at(&mut rbufs[..], off)
+            let r = file
+                .readv_at(&mut rbufs[..], off)
                 .expect("readv_at failed early")
                 .await
                 .unwrap();
@@ -282,7 +301,8 @@ mod file {
         let dir = t!(TempDir::new());
         let path = dir.path().join("write_at");
         let file = t!(File::open(&path));
-        let r = file.write_at(wbuf, 0)
+        let r = file
+            .write_at(wbuf, 0)
             .expect("write_at failed early")
             .await
             .unwrap();
@@ -305,7 +325,8 @@ mod file {
         let dir = t!(TempDir::new());
         let path = dir.path().join("writev_at");
         let file = t!(File::open(&path));
-        let r = file.writev_at(&wbufs[..], 0)
+        let r = file
+            .writev_at(&wbufs[..], 0)
             .expect("writev_at failed early")
             .await
             .unwrap();
@@ -326,7 +347,8 @@ mod file {
         let path = dir.path().join("write_at");
         {
             let file = t!(File::open(&path));
-            let r = file.write_at(WBUF, 0)
+            let r = file
+                .write_at(WBUF, 0)
                 .expect("write_at failed early")
                 .await
                 .unwrap();
@@ -350,7 +372,8 @@ mod file {
         let dir = t!(TempDir::new());
         let path = dir.path().join("writev_at_static");
         let file = t!(File::open(&path));
-        let r = file.writev_at(&wbufs[..], 0)
+        let r = file
+            .writev_at(&wbufs[..], 0)
             .expect("writev_at failed early")
             .await
             .unwrap();
@@ -364,10 +387,10 @@ mod file {
 
     // Tests that work with device files
     mod dev {
-        use super::*;
-
         use mdconfig::Md;
         use rstest::{fixture, rstest};
+
+        use super::*;
 
         #[fixture]
         fn md() -> Option<Md> {
@@ -375,7 +398,7 @@ mod file {
         }
 
         #[rstest]
-        fn len(md: Option<Md>){
+        fn len(md: Option<Md>) {
             if let Some(md) = md {
                 let file = t!(File::open(md.path()));
                 let len = file.len().unwrap();

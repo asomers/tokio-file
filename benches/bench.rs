@@ -2,19 +2,22 @@
 
 extern crate test;
 
-use futures::channel::oneshot;
 use std::{
     fs,
     io::{SeekFrom, Write},
-    sync::{Arc, Mutex, mpsc},
+    sync::{mpsc, Arc, Mutex},
     thread,
 };
+
+use futures::channel::oneshot;
 use tempfile::TempDir;
 use test::Bencher;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio::runtime::{self, Runtime};
+use tokio::{
+    io::{AsyncReadExt, AsyncSeekExt},
+    runtime::{self, Runtime},
+};
 
-const FLEN: usize = 1<<19;
+const FLEN: usize = 1 << 19;
 
 fn runtime() -> Runtime {
     runtime::Builder::new_multi_thread()
@@ -40,10 +43,13 @@ fn bench_aio_read(bench: &mut Bencher) {
 
     let mut rbuf = vec![0u8; FLEN];
     bench.iter(|| {
-        let len = runtime.block_on(async{
-            file.read_at(&mut rbuf[..], 0)
-                .expect("read_at failed early").await
-        }).unwrap();
+        let len = runtime
+            .block_on(async {
+                file.read_at(&mut rbuf[..], 0)
+                    .expect("read_at failed early")
+                    .await
+            })
+            .unwrap();
         assert_eq!(len, wbuf.len());
     });
 }
@@ -70,21 +76,22 @@ fn bench_threaded_read(bench: &mut Bencher) {
         let fclone = file.clone();
         thread::spawn(move || {
             let mut rbuf = vec![0u8; FLEN];
-            let len = fclone.lock()
-                            .unwrap()
-                            .read_at(&mut rbuf[..], 0)
-                            .expect("read failed");
+            let len = fclone
+                .lock()
+                .unwrap()
+                .read_at(&mut rbuf[..], 0)
+                .expect("read failed");
             tx.send(len).expect("sending failed");
         });
         let len = runtime.block_on(rx).expect("receiving failed");
         assert_eq!(len, FLEN);
     });
 }
-    
+
 struct TpOpspec {
-    f:  Arc<Mutex<fs::File>>,
+    f:      Arc<Mutex<fs::File>>,
     offset: u64,
-    tx: oneshot::Sender<usize>
+    tx:     oneshot::Sender<usize>,
 }
 
 // For comparison, benchmark the equivalent operation using a single thread to
@@ -103,19 +110,15 @@ fn bench_threadpool_read(bench: &mut Bencher) {
     // Prep the thread "pool"
     let (_ptx, prx) = mpsc::channel();
     let ptx = Arc::new(_ptx);
-    thread::spawn(move || {
-        loop {
-            let v: Option<TpOpspec> = prx.recv().unwrap();
-            if let Some(op) = v {
-                let mut rbuf = vec![0; FLEN];
-                let f = op.f.lock().unwrap();
-                let len = {
-                    f.read_at(&mut rbuf[..], op.offset).unwrap()
-                };
-                op.tx.send(len).expect("send failed");
-            } else {
-                break;
-            }
+    thread::spawn(move || loop {
+        let v: Option<TpOpspec> = prx.recv().unwrap();
+        if let Some(op) = v {
+            let mut rbuf = vec![0; FLEN];
+            let f = op.f.lock().unwrap();
+            let len = { f.read_at(&mut rbuf[..], op.offset).unwrap() };
+            op.tx.send(len).expect("send failed");
+        } else {
+            break;
         }
     });
 
@@ -129,7 +132,7 @@ fn bench_threadpool_read(bench: &mut Bencher) {
         let opspec = TpOpspec {
             f: file.clone(),
             offset: 0,
-            tx
+            tx,
         };
         ptxclone.send(Some(opspec)).unwrap();
 
@@ -155,10 +158,12 @@ fn bench_tokio_read(bench: &mut Bencher) {
 
     let mut rbuf = vec![0u8; FLEN];
     bench.iter(move || {
-        let len = runtime.block_on(async{
-            file.seek(SeekFrom::Start(0)).await.unwrap();
-            file.read_exact(&mut rbuf[..]).await
-        }).unwrap();
+        let len = runtime
+            .block_on(async {
+                file.seek(SeekFrom::Start(0)).await.unwrap();
+                file.read_exact(&mut rbuf[..]).await
+            })
+            .unwrap();
         assert_eq!(len, wbuf.len());
     })
 }
