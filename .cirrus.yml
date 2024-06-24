@@ -61,4 +61,8 @@ task:
     - cargo +$VERSION update -Zdirect-minimal-versions
     - cargo +$VERSION check --all-targets
     - cargo +$VERSION doc --no-deps
+  fmt_script:
+    - . $HOME/.cargo/env
+    - rustup component add --toolchain $VERSION rustfmt
+    - cargo +$VERSION fmt --all -- --check --color=never
   before_cache_script: rm -rf $HOME/.cargo/registry/index

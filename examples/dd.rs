@@ -7,20 +7,18 @@
 //!     cargo run --example dd -- -b 4096 -c 100 /tmp/infile /tmp/outfile
 //!     cmp /tmp/infile /tmp/outfile
 
-use futures::{StreamExt, stream};
+use std::{env, str::FromStr};
+
+use futures::{stream, StreamExt};
 use getopts::Options;
-use std::{
-    env,
-    str::FromStr
-};
 use tokio::fs::File;
 use tokio_file::AioFileExt;
 
 #[derive(Debug)]
 struct Dd {
-    pub bs: usize,
-    pub count: usize,
-    pub infile: File,
+    pub bs:      usize,
+    pub count:   usize,
+    pub infile:  File,
     pub outfile: File,
 }
 
@@ -49,8 +47,10 @@ async fn main() {
     opts.optopt("c", "count", "Number of blocks to copy", "COUNT");
     opts.optflag("h", "help", "print this help menu");
     let matches = match opts.parse(env::args().skip(1)) {
-        Ok(m) => {m},
-        Err(f) => { panic!("{}", f.to_string()) }
+        Ok(m) => m,
+        Err(f) => {
+            panic!("{}", f.to_string())
+        }
     };
     if matches.opt_present("h") {
         usage(opts);
@@ -58,11 +58,11 @@ async fn main() {
     }
     let bs = match matches.opt_str("b") {
         Some(v) => usize::from_str(v.as_str()).unwrap(),
-        None => 512
+        None => 512,
     };
     let count = match matches.opt_str("c") {
         Some(v) => usize::from_str(v.as_str()).unwrap(),
-        None => 1
+        None => 1,
     };
     let infile = &matches.free[0];
     let outfile = &matches.free[1];
@@ -82,11 +82,7 @@ async fn main() {
                 .unwrap()
                 .await
                 .unwrap();
-            ddr.outfile
-                .write_at(&rbuf[..], ofs)
-                .unwrap()
-                .await
-                .unwrap();
+            ddr.outfile.write_at(&rbuf[..], ofs).unwrap().await.unwrap();
         })
         .await;
 }

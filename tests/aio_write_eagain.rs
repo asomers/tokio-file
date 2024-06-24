@@ -1,7 +1,5 @@
-use std::{
-    fs::File,
-    io::ErrorKind
-};
+use std::{fs::File, io::ErrorKind};
+
 use futures::future;
 use tempfile::TempDir;
 use tokio_file::AioFileExt;
@@ -23,9 +21,8 @@ async fn write_at_eagain() {
 
     let wbuf = vec![0u8; 4096];
 
-    let futs = (0..count).map(|i| {
-        file.write_at(&wbuf[..], 4096 * i as u64).unwrap()
-    });
+    let futs =
+        (0..count).map(|i| file.write_at(&wbuf[..], 4096 * i as u64).unwrap());
     let results = future::join_all(futs).await;
 
     let mut n_ok = 0;
@@ -35,9 +32,9 @@ async fn write_at_eagain() {
             Ok(aio_result) => {
                 n_ok += 1;
                 assert_eq!(aio_result, 4096);
-            },
+            }
             Err(e) if e.kind() == ErrorKind::WouldBlock => n_eagain += 1,
-            Err(e) => panic!("unexpected result {:?}", e)
+            Err(e) => panic!("unexpected result {:?}", e),
         }
     }
     // We should've been able to submit at least count / 2 operations.  But if

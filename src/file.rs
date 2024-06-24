@@ -7,18 +7,19 @@ use std::{
         fd::BorrowedFd,
         unix::{
             fs::FileTypeExt,
-            io::{AsFd, AsRawFd, RawFd}
+            io::{AsFd, AsRawFd, RawFd},
         },
     },
     path::Path,
-    pin::Pin
+    pin::Pin,
 };
+
 use futures::{
+    task::{Context, Poll},
     Future,
-    task::{Context, Poll}
 };
 use mio_aio::AioFsyncMode;
-use tokio::io::bsd::{AioSource, Aio};
+use tokio::io::bsd::{Aio, AioSource};
 
 nix::ioctl_read! {
     /// Get the size of the entire device in bytes.  This should be a multiple
@@ -41,6 +42,7 @@ impl<T: mio_aio::SourceApi> AioSource for TokioSource<T> {
     fn register(&mut self, kq: RawFd, token: usize) {
         self.0.register_raw(kq, token)
     }
+
     fn deregister(&mut self) {
         self.0.deregister_raw()
     }
@@ -58,28 +60,30 @@ impl<T: mio_aio::SourceApi> Future for TokioFileFut<T> {
         let poll_result = self.0.poll_ready(cx);
         match poll_result {
             Poll::Pending => {
-                if !self.0.0.in_progress() {
-                    let p = unsafe { self.map_unchecked_mut(|s| &mut s.0.0) };
+                if !self.0 .0.in_progress() {
+                    let p = unsafe { self.map_unchecked_mut(|s| &mut s.0 .0) };
                     match p.submit() {
                         Ok(()) => (),
-                        Err(e) => return Poll::Ready(Err(
-                            io::Error::from_raw_os_error(e as i32)
-                        ))
+                        Err(e) => {
+                            return Poll::Ready(Err(
+                                io::Error::from_raw_os_error(e as i32),
+                            ))
+                        }
                     }
                 }
                 Poll::Pending
-            },
+            }
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
             Poll::Ready(Ok(_ev)) => {
                 // At this point, we could clear readiness.  But there's no
                 // point, since we're about to drop the Aio.
-                let p = unsafe { self.map_unchecked_mut(|s| &mut s.0.0) };
+                let p = unsafe { self.map_unchecked_mut(|s| &mut s.0 .0) };
                 let result = p.aio_return();
                 match result {
                     Ok(r) => Poll::Ready(Ok(r)),
-                    Err(e) => Poll::Ready(Err(
-                        io::Error::from_raw_os_error(e as i32)
-                    ))
+                    Err(e) => {
+                        Poll::Ready(Err(io::Error::from_raw_os_error(e as i32)))
+                    }
                 }
             }
         }
@@ -131,9 +135,11 @@ pub trait AioFileExt: AsFd {
     /// assert_eq!(&rbuf[..], &EXPECT[..]);
     /// # }
     /// ```
-    fn read_at<'a>(&'a self, buf: &'a mut [u8], offset: u64)
-        -> io::Result<ReadAt<'a>>
-    {
+    fn read_at<'a>(
+        &'a self,
+        buf: &'a mut [u8],
+        offset: u64,
+    ) -> io::Result<ReadAt<'a>> {
         let fd = self.as_fd();
         let source = TokioSource(mio_aio::ReadAt::read_at(fd, offset, buf, 0));
         Ok(TokioFileFut(Aio::new_for_aio(source)?))
@@ -196,11 +202,14 @@ pub trait AioFileExt: AsFd {
     /// assert_eq!(&rbuf1[..], &EXPECT1[..]);
     /// # }
     /// ```
-    fn readv_at<'a>(&'a self, bufs: &mut [IoSliceMut<'a>],
-                        offset: u64) -> io::Result<ReadvAt<'a>>
-    {
+    fn readv_at<'a>(
+        &'a self,
+        bufs: &mut [IoSliceMut<'a>],
+        offset: u64,
+    ) -> io::Result<ReadvAt<'a>> {
         let fd = self.as_fd();
-        let source = TokioSource(mio_aio::ReadvAt::readv_at(fd, offset, bufs, 0));
+        let source =
+            TokioSource(mio_aio::ReadvAt::readv_at(fd, offset, bufs, 0));
         Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 
@@ -270,11 +279,11 @@ pub trait AioFileExt: AsFd {
     fn write_at<'a>(
         &'a self,
         buf: &'a [u8],
-        offset: u64
-    ) -> io::Result<WriteAt<'a>>
-    {
+        offset: u64,
+    ) -> io::Result<WriteAt<'a>> {
         let fd = self.as_fd();
-        let source = TokioSource(mio_aio::WriteAt::write_at(fd, offset, buf, 0));
+        let source =
+            TokioSource(mio_aio::WriteAt::write_at(fd, offset, buf, 0));
         Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 
@@ -330,26 +339,28 @@ pub trait AioFileExt: AsFd {
     /// assert_eq!(len, EXPECT.len());
     /// assert_eq!(rbuf, EXPECT);
     /// # }
-    fn writev_at<'a>(&'a self, bufs: &[IoSlice<'a>], offset: u64)
-        -> io::Result<WritevAt<'a>>
-    {
+    fn writev_at<'a>(
+        &'a self,
+        bufs: &[IoSlice<'a>],
+        offset: u64,
+    ) -> io::Result<WritevAt<'a>> {
         let fd = self.as_fd();
-        let source = TokioSource(mio_aio::WritevAt::writev_at(fd, offset, bufs, 0));
+        let source =
+            TokioSource(mio_aio::WritevAt::writev_at(fd, offset, bufs, 0));
         Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 }
 
-impl<T: AsFd> AioFileExt for T {
-}
+impl<T: AsFd> AioFileExt for T {}
 
 /// Basically a Tokio file handle.  This is the starting point for tokio-file.
 #[deprecated(since = "0.10.0", note = "use AioFileExt instead")]
 #[derive(Debug)]
 pub struct File {
-    file: fs::File,
+    file:       fs::File,
     /// The preferred (not necessarily minimum) sector size for accessing
     /// the device
-    sectorsize: usize
+    sectorsize: usize,
 }
 
 // is_empty doesn't make much sense for files
@@ -364,7 +375,10 @@ impl File {
             // This ioctl is always safe
             unsafe {
                 diocgmediasize(self.file.as_raw_fd(), mediasize.as_mut_ptr())
-            }.map_err(|_| io::Error::from_raw_os_error(nix::errno::Errno::last_raw()))?;
+            }
+            .map_err(|_| {
+                io::Error::from_raw_os_error(nix::errno::Errno::last_raw())
+            })?;
             // Safe because we know the ioctl succeeded
             unsafe { Ok(mediasize.assume_init() as u64) }
         } else {
@@ -416,9 +430,7 @@ impl File {
         } else {
             1
         };
-        File {file,
-        sectorsize
-        }
+        File { file, sectorsize }
     }
 
     /// Open a new Tokio file with mode `O_RDWR | O_CREAT`.
@@ -467,9 +479,11 @@ impl File {
     /// assert_eq!(&rbuf[..], &EXPECT[..]);
     /// # })
     /// ```
-    pub fn read_at<'a, 'b>(&'b self, buf: &'a mut [u8], offset: u64)
-        -> io::Result<ReadAt<'a>>
-    {
+    pub fn read_at<'a, 'b>(
+        &'b self,
+        buf: &'a mut [u8],
+        offset: u64,
+    ) -> io::Result<ReadAt<'a>> {
         let fd: BorrowedFd<'_> = self.file.as_fd();
         // Not really safe, but required for backwards-compatibility with
         // tokio_file 0.9.0, which did not use I/O Safety
@@ -536,16 +550,19 @@ impl File {
     /// assert_eq!(&rbuf1[..], &EXPECT1[..]);
     /// # })
     /// ```
-    pub fn readv_at<'a, 'b>(&'b self, bufs: &mut [IoSliceMut<'a>],
-                        offset: u64) -> io::Result<ReadvAt<'a>>
-    {
+    pub fn readv_at<'a, 'b>(
+        &'b self,
+        bufs: &mut [IoSliceMut<'a>],
+        offset: u64,
+    ) -> io::Result<ReadvAt<'a>> {
         let fd = self.file.as_fd();
         // Not really safe, but required for backwards-compatibility with
         // tokio_file 0.9.0, which did not use I/O Safety
         let fd: BorrowedFd<'static> = unsafe {
             std::mem::transmute::<BorrowedFd<'b>, BorrowedFd<'static>>(fd)
         };
-        let source = TokioSource(mio_aio::ReadvAt::readv_at(fd, offset, bufs, 0));
+        let source =
+            TokioSource(mio_aio::ReadvAt::readv_at(fd, offset, bufs, 0));
         Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 
@@ -618,16 +635,16 @@ impl File {
     pub fn write_at<'a, 'b>(
         &'b self,
         buf: &'a [u8],
-        offset: u64
-    ) -> io::Result<WriteAt<'a>>
-    {
+        offset: u64,
+    ) -> io::Result<WriteAt<'a>> {
         let fd = self.file.as_fd();
         // Not really safe, but required for backwards-compatibility with
         // tokio_file 0.9.0, which did not use I/O Safety
         let fd: BorrowedFd<'static> = unsafe {
             std::mem::transmute::<BorrowedFd<'b>, BorrowedFd<'static>>(fd)
         };
-        let source = TokioSource(mio_aio::WriteAt::write_at(fd, offset, buf, 0));
+        let source =
+            TokioSource(mio_aio::WriteAt::write_at(fd, offset, buf, 0));
         Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 
@@ -683,16 +700,19 @@ impl File {
     /// assert_eq!(rbuf, EXPECT);
     /// # })
     /// ```
-    pub fn writev_at<'a, 'b>(&'b self, bufs: &[IoSlice<'a>], offset: u64)
-        -> io::Result<WritevAt<'a>>
-    {
+    pub fn writev_at<'a, 'b>(
+        &'b self,
+        bufs: &[IoSlice<'a>],
+        offset: u64,
+    ) -> io::Result<WritevAt<'a>> {
         let fd = self.file.as_fd();
         // Not really safe, but required for backwards-compatibility with
         // tokio_file 0.9.0, which did not use I/O Safety
         let fd: BorrowedFd<'static> = unsafe {
             std::mem::transmute::<BorrowedFd<'b>, BorrowedFd<'static>>(fd)
         };
-        let source = TokioSource(mio_aio::WritevAt::writev_at(fd, offset, bufs, 0));
+        let source =
+            TokioSource(mio_aio::WritevAt::writev_at(fd, offset, bufs, 0));
         Ok(TokioFileFut(Aio::new_for_aio(source)?))
     }
 }
