@@ -1,4 +1,6 @@
 // vim: tw=80
+#![allow(clippy::doc_overindented_list_items)]
+
 use std::{
     fs,
     io::{self, IoSlice, IoSliceMut},
