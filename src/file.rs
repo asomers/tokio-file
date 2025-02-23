@@ -1,4 +1,6 @@
 // vim: tw=80
+// This lint isn't very helpful.  See
+// https://github.com/rust-lang/rust-clippy/discussions/14256
 #![allow(clippy::doc_overindented_list_items)]
 
 use std::{
