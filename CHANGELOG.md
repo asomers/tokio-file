@@ -2,8 +2,11 @@
 
 ### Changed
 
-- Updated mio to 1.0, and raised MSRV to 1.70.0
+- Updated mio to 1.0
   (#[58](https://github.com/asomers/tokio-file/pull/58))
+
+- Raised MSRV to 1.71.0
+  (#[59](https://github.com/asomers/tokio-file/pull/59))
 
 ## [0.10.0] - 2024-05-25
 
