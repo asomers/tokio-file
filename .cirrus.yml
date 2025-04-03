@@ -31,10 +31,8 @@ task:
   << : *SETUP
   test_script:
     - . $HOME/.cargo/env
-    - cargo +$VERSION test
+    - cargo +$VERSION test -- --nocapture
     - cargo +$VERSION doc --no-deps
-    # Also run tests with sudo, because some need it for mdconfig
-    - sudo -E cargo test --tests
   before_cache_script: rm -rf $HOME/.cargo/registry/index
 
 task:
@@ -44,9 +42,7 @@ task:
   << : *SETUP
   test_script:
     - . $HOME/.cargo/env
-    - cargo +$VERSION test --all-targets
-    # Also run tests with sudo, because some need it for mdconfig
-    - sudo -E cargo test --tests
+    - cargo +$VERSION test --all-targets -- --nocapture
   clippy_script:
     - . $HOME/.cargo/env
     - cargo +$VERSION clippy --all-features --all-targets -- -D warnings
