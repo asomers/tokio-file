@@ -1,3 +1,10 @@
+## [Unreleased] - ReleaseDate
+
+### Changed
+
+- Updated mio to 1.0, and raised MSRV to 1.70.0
+  (#[58](https://github.com/asomers/tokio-file/pull/58))
+
 ## [0.10.0] - 2024-05-25
 
 ### Added

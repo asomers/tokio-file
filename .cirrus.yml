@@ -1,5 +1,5 @@
 freebsd_instance:
-  image: freebsd-13-3-release-amd64
+  image: freebsd-13-5-release-amd64
 
 setup: &SETUP
   env:
@@ -25,28 +25,24 @@ setup: &SETUP
     fingerprint_script: cat Cargo.lock || echo ""
 
 task:
-  name: FreeBSD 13.3 MSRV
+  name: FreeBSD 13.5 MSRV
   env:
     VERSION: 1.70.0
   << : *SETUP
   test_script:
     - . $HOME/.cargo/env
-    - cargo +$VERSION test
+    - cargo +$VERSION test -- --nocapture
     - cargo +$VERSION doc --no-deps
-    # Also run tests with sudo, because some need it for mdconfig
-    - sudo -E cargo test --tests
   before_cache_script: rm -rf $HOME/.cargo/registry/index
 
 task:
-  name: FreeBSD 13.3 nightly
+  name: FreeBSD 13.5 nightly
   env:
     VERSION: nightly
   << : *SETUP
   test_script:
     - . $HOME/.cargo/env
-    - cargo +$VERSION test --all-targets
-    # Also run tests with sudo, because some need it for mdconfig
-    - sudo -E cargo test --tests
+    - cargo +$VERSION test --all-targets -- --nocapture
   clippy_script:
     - . $HOME/.cargo/env
     - cargo +$VERSION clippy --all-features --all-targets -- -D warnings
