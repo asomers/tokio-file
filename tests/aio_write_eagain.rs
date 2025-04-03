@@ -1,6 +1,7 @@
 use std::{fs::File, io::ErrorKind};
 
 use futures::future;
+use sysctl::Sysctl;
 use tempfile::TempDir;
 use tokio_file::AioFileExt;
 
@@ -8,7 +9,8 @@ use tokio_file::AioFileExt;
 // since it intentionally uses all of the system's AIO resources.
 #[tokio::test]
 async fn write_at_eagain() {
-    let limit = sysctl::value("vfs.aio.max_aio_queue_per_proc").unwrap();
+    let ctl = sysctl::Ctl::new("vfs.aio.max_aio_queue_per_proc").unwrap();
+    let limit = ctl.value().unwrap();
     let count = if let sysctl::CtlValue::Int(x) = limit {
         (2 * x) as usize
     } else {
