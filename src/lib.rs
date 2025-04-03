@@ -12,6 +12,7 @@
 //! use std::io::Read;
 //! use tempfile::TempDir;
 //! use tokio::runtime;
+//! use tokio_file::AioFileExt;
 //!
 //! let contents = b"abcdef";
 //! let mut rbuf = Vec::new();
@@ -22,7 +23,6 @@
 //!     .create(true)
 //!     .write(true)
 //!     .open(&path)
-//!     .map(tokio_file::File::new)
 //!     .unwrap();
 //! let rt = runtime::Builder::new_current_thread()
 //!     .enable_io()
@@ -42,6 +42,4 @@
 
 mod file;
 
-#[allow(deprecated)]
-pub use file::File;
 pub use file::{AioFileExt, ReadAt, ReadvAt, SyncAll, WriteAt, WritevAt};

@@ -8,6 +8,11 @@
 - Raised MSRV to 1.71.0
   (#[59](https://github.com/asomers/tokio-file/pull/59))
 
+### Removed
+
+- Removed `tokio_file::File`, which was deprecated in the previous release.
+  (#[61](https://github.com/asomers/tokio-file/pull/61))
+
 ## [0.10.0] - 2024-05-25
 
 ### Added
