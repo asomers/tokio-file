@@ -14,7 +14,7 @@ async fn write_at_eagain() {
     let count = if let sysctl::CtlValue::Int(x) = limit {
         (2 * x) as usize
     } else {
-        panic!("sysctl: {:?}", limit);
+        panic!("sysctl: {limit:?}");
     };
 
     let dir = TempDir::new().unwrap();
@@ -36,7 +36,7 @@ async fn write_at_eagain() {
                 assert_eq!(aio_result, 4096);
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => n_eagain += 1,
-            Err(e) => panic!("unexpected result {:?}", e),
+            Err(e) => panic!("unexpected result {e:?}"),
         }
     }
     // We should've been able to submit at least count / 2 operations.  But if
