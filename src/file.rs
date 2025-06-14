@@ -233,7 +233,7 @@ pub trait AioFileExt: AsFd {
     /// # }
     /// ```
     // TODO: add sync_all_data, for supported operating systems
-    fn sync_all(&self) -> io::Result<SyncAll> {
+    fn sync_all(&self) -> io::Result<SyncAll<'_>> {
         let mode = AioFsyncMode::O_SYNC;
         let fd = self.as_fd();
         let source = TokioSource(mio_aio::Fsync::fsync(fd, mode, 0));
