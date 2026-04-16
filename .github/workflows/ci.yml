@@ -16,7 +16,7 @@ jobs:
       matrix:
         include:
           - freebsd_version: "14.4"
-            rust_version: "1.71.0"
+            rust_version: "stable"
           - freebsd_version: "15.0"
             rust_version: "nightly"
     name: FreeBSD ${{ matrix.freebsd_version }} ${{ matrix.rust_version }}
@@ -37,7 +37,6 @@ jobs:
         shell: freebsd {0}
         run: |
           . $HOME/.cargo/env
-          rustc -vV
           cargo test -- --nocapture
       - name: Doc
         shell: freebsd {0}
@@ -73,3 +72,30 @@ jobs:
           . $HOME/.cargo/env
           rustup component add rustfmt
           cargo fmt --all -- --check --color=never
+  msrv:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - freebsd_version: "14.4"
+            rust_version: "1.71.0"
+    name: FreeBSD ${{ matrix.freebsd_version }} ${{ matrix.rust_version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Start VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ matrix.freebsd_version }}
+          usesh: true
+      - name: Install dependencies
+        shell: freebsd {0}
+        run: |
+          pkg install -y curl
+          fetch https://sh.rustup.rs -o rustup.sh
+          sh rustup.sh -y --profile=minimal --default-toolchain ${{ matrix.rust_version }}
+      - name: Test
+        shell: freebsd {0}
+        run: |
+          . $HOME/.cargo/env
+          cargo check
