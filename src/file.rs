@@ -5,7 +5,7 @@
 
 use std::{
     io::{self, IoSlice, IoSliceMut},
-    os::unix::io::{AsFd, RawFd},
+    os::unix::io::{AsFd, BorrowedFd},
     pin::Pin,
 };
 
@@ -34,7 +34,7 @@ nix::ioctl_read! {
 struct TokioSource<T>(T);
 
 impl<T: mio_aio::SourceApi> AioSource for TokioSource<T> {
-    fn register(&mut self, kq: RawFd, token: usize) {
+    fn register_borrowed(&mut self, kq: BorrowedFd<'_>, token: usize) {
         self.0.register_raw(kq, token)
     }
 
