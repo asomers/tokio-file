@@ -96,6 +96,11 @@ jobs:
           pkg install -y curl
           fetch https://sh.rustup.rs -o rustup.sh
           sh rustup.sh -y --profile=minimal --default-toolchain ${{ matrix.rust_version }}
+      - name: Deps
+        shell: freebsd {0}
+        run: |
+          . $HOME/.cargo/env
+          cargo update -p tokio --precise 1.53.0
       - name: Test
         shell: freebsd {0}
         run: |
