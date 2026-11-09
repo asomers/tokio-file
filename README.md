@@ -8,13 +8,13 @@ mixed with all other Future types within the Tokio reactor.
 
 [Documentation](https://docs.rs/crate/tokio-file)
 
-[tokio]: https://github.com/tokio-rs/tokio-core
+[tokio]: https://github.com/tokio-rs/tokio
 
 ```toml
 # Cargo.toml
 [depdendencies]
 tokio = "1.0.0"
-tokio-file = "0.10.0"
+tokio-file = "0.11.0"
 ```
 
 # Usage

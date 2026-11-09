@@ -5,6 +5,11 @@
 - Use I/O Safety for the kqueue file descriptor.
   (#[65](https://github.com/asomers/tokio-file/pull/65))
 
+### Fixed
+
+- Remove a dependency on nix, no longer necessary since 0.11.0
+  (#[68](https://github.com/asomers/tokio-file/pull/68))
+
 ## [0.11.0] - 2025-04-19
 
 ### Changed
