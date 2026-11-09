@@ -17,8 +17,10 @@ jobs:
         include:
           - freebsd_version: "14.5"
             rust_version: "stable"
+            targets: ""
           - freebsd_version: "15.1"
             rust_version: "nightly"
+            targets: "--all-targets"
     name: FreeBSD ${{ matrix.freebsd_version }} ${{ matrix.rust_version }}
     steps:
       - uses: actions/checkout@v6
@@ -37,7 +39,7 @@ jobs:
         shell: freebsd {0}
         run: |
           . $HOME/.cargo/env
-          cargo test -- --nocapture
+          cargo test ${{ matrix.targets }} -- --nocapture
       - name: Doc
         shell: freebsd {0}
         run: |

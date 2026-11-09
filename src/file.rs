@@ -16,20 +16,6 @@ use futures::{
 use mio_aio::AioFsyncMode;
 use tokio::io::bsd::{Aio, AioSource};
 
-nix::ioctl_read! {
-    /// Get the size of the entire device in bytes.  This should be a multiple
-    /// of the sector size.
-    diocgmediasize, 'd', 129, nix::libc::off_t
-}
-
-nix::ioctl_read! {
-    diocgsectorsize, 'd', 128, nix::libc::c_uint
-}
-
-nix::ioctl_read! {
-    diocgstripesize, 'd', 139, nix::libc::off_t
-}
-
 #[derive(Debug)]
 struct TokioSource<T>(T);
 

@@ -20,7 +20,6 @@ targets = [
 
 [dependencies]
 futures = "0.3.21"
-nix = { version = ">=0.30.0,<0.32.0", default-features = false, features = ["ioctl"] }
 mio-aio = { version = "2", features = ["tokio"] }
 tokio = { version = "1.52.0", features = [ "net" ] }
 
