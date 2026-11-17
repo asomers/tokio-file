@@ -27,7 +27,7 @@ tokio = { version = "1.52.0", features = [ "net" ] }
 rstest = "0.18.0"
 getopts = "0.2.18"
 mdconfig = "0.2.0"
-nix = {version = ">=0.30.0,<0.32.0", default-features = false, features = ["user"] }
+nix = {version = ">=0.30.0,<0.33.0", default-features = false, features = ["user"] }
 sysctl = "0.6"
 tempfile = "3.4"
 tokio = { version = "1.52.0", features = [ "fs", "io-util", "macros", "net", "rt", "rt-multi-thread" ] }
